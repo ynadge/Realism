@@ -161,22 +161,16 @@ function JobPageContent() {
           </SurfaceCard>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-
-          <div className="flex flex-col gap-4 min-w-0">
-            <SurfaceCard>
-              <JobStream events={events} isLive={isLive} />
-            </SurfaceCard>
-
-            <SurfaceCard>
-              <SpendMeter spent={total} budget={budget} />
-            </SurfaceCard>
-          </div>
-
-          <div className="min-w-0">
-            <ArtifactViewer artifact={artifact} isLoading={isLive} />
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-4 items-end">
+          <SurfaceCard>
+            <JobStream events={events} isLive={isLive} />
+          </SurfaceCard>
+          <SurfaceCard className="md:w-56">
+            <SpendMeter spent={total} budget={budget} />
+          </SurfaceCard>
         </div>
+
+        <ArtifactViewer artifact={artifact} isLoading={isLive} />
 
         {!isLive && events.length > 0 && (
           <Receipt events={events} total={total} budget={budget} />
