@@ -1,6 +1,6 @@
 # Sapiom API Feedback
 
-> Each entry documents a friction point, unexpected behavior, or inefficiency encountered while using Sapiom's unified capability stack in a real agentic application.
+> Observations collected during the Realism build.
 
 ---
 
