@@ -296,6 +296,11 @@ export async function sapiomGetAnalytics(jobId: string): Promise<{
 
 const QSTASH_BASE = 'https://upstash.services.sapiom.ai'
 
+// Schedule creation uses the QStash schedules endpoint with destination in the
+// URL path and cron expression in the Upstash-Cron header (native QStash pattern).
+// NOTE: This endpoint is NOT documented on the Sapiom Messaging page — only
+// publish/enqueue/batch are. It works because the proxy forwards QStash paths.
+
 export async function sapiomScheduleJob(
   jobId: string,
   cadence: 'daily' | 'weekly',
@@ -303,12 +308,26 @@ export async function sapiomScheduleJob(
 ): Promise<{ scheduleId: string }> {
   const cron = cadence === 'daily' ? '0 9 * * *' : '0 9 * * 1'
 
-  return sapiomPost(`${QSTASH_BASE}/v1/qstash/schedules`, {
-    destination: webhookUrl,
-    cron,
-    body: JSON.stringify({ jobId }),
-    headers: { 'Content-Type': 'application/json' },
-  })
+  const res = await getSapiomFetch()(
+    `${QSTASH_BASE}/v1/qstash/schedules/${webhookUrl}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Upstash-Cron': cron,
+      },
+      body: JSON.stringify({ jobId }),
+    }
+  )
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '(no body)')
+    throw new SapiomError(res.status, `QStash schedule creation failed (${res.status}): ${body}`)
+  }
+
+  const data = await res.json() as Record<string, unknown>
+  const scheduleId = (data.scheduleId ?? data.messageId ?? data.id ?? '') as string
+  return { scheduleId }
 }
 
 export async function sapiomDeleteSchedule(scheduleId: string): Promise<void> {
@@ -318,6 +337,13 @@ export async function sapiomDeleteSchedule(scheduleId: string): Promise<void> {
 
   if (!res.ok) {
     const body = await res.text().catch(() => '(no body)')
-    throw new Error(`sapiomDeleteSchedule error ${res.status}: ${body}`)
+    throw new SapiomError(res.status, `sapiomDeleteSchedule error ${res.status}: ${body}`)
   }
+}
+
+export async function sapiomPublishMessage(
+  destinationUrl: string,
+  body: Record<string, unknown>
+): Promise<{ messageId: string }> {
+  return sapiomPost(`${QSTASH_BASE}/v1/qstash/publish/${destinationUrl}`, body)
 }

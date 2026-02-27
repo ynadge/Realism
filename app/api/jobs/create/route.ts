@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { validateSession } from '@/lib/auth'
 import { classifyGoal } from '@/lib/classifier'
 import { createJob } from '@/lib/jobs'
-import { sapiomCreateSpendRule } from '@/lib/sapiom'
+import { updateJob } from '@/lib/redis'
+import { sapiomCreateSpendRule, sapiomScheduleJob } from '@/lib/sapiom'
 import type { JobCadence } from '@/types'
 
 export async function POST(req: NextRequest) {
@@ -59,8 +60,6 @@ export async function POST(req: NextRequest) {
     const spendRule = await sapiomCreateSpendRule(jobId, budget)
     spendRuleId = spendRule.id
   } catch (err) {
-    // Non-fatal: orchestrator enforces budget in its own loop.
-    // Spending rule is an extra safety net, not a hard dependency.
     console.warn('[jobs/create] Spending rule creation failed (non-fatal):', err)
   }
 
@@ -74,6 +73,28 @@ export async function POST(req: NextRequest) {
       cadence,
       spendRuleId,
     })
+
+    if (type === 'persistent' && cadence) {
+      const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/jobs/webhook`
+
+      try {
+        const schedule = await sapiomScheduleJob(jobId, cadence, webhookUrl)
+        await updateJob(jobId, { qstashScheduleId: schedule.scheduleId })
+        console.log(`[jobs/create] QStash schedule created: ${schedule.scheduleId}`)
+      } catch (err) {
+        console.warn('[jobs/create] QStash schedule creation failed (non-fatal):', err)
+      }
+
+      // Trigger immediate first run after a 150ms delay so the scheduleId
+      // write has time to persist before the webhook reads the job.
+      setTimeout(() => {
+        fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jobId }),
+        }).catch(() => {})
+      }, 150)
+    }
 
     return NextResponse.json({ jobId: job.id, type: job.type })
   } catch (err) {

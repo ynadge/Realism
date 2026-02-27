@@ -26,6 +26,22 @@ function JobPageContent() {
     if (hasStarted.current) return
     hasStarted.current = true
 
+    async function loadPersistedData() {
+      try {
+        const res = await fetch(`/api/jobs/${id}`)
+        if (!res.ok) return
+        const data = await res.json()
+        if (data.spendEvents?.length) {
+          setEvents(data.spendEvents)
+          const sum = data.spendEvents.reduce((s: number, e: SpendEvent) => s + e.cost, 0)
+          setTotal(sum)
+        }
+        if (data.artifact) setArtifact(data.artifact)
+      } catch {
+        // Non-fatal — just can't load history
+      }
+    }
+
     async function startJob() {
       const res = await fetch('/api/jobs/execute', {
         method: 'POST',
@@ -36,6 +52,7 @@ function JobPageContent() {
       if (!res.ok) {
         if (res.status === 409) {
           setIsLive(false)
+          await loadPersistedData()
           return
         }
         setError(`Failed to start job (${res.status}).`)

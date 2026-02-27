@@ -1,6 +1,5 @@
 # Sapiom API Feedback
 
-> Observations collected during the Realism build (Tickets 000–006).
 > Each entry documents a friction point, unexpected behavior, or inefficiency encountered while using Sapiom's unified capability stack in a real agentic application.
 
 ---
@@ -122,16 +121,15 @@
 
 ---
 
-## Summary Table
+## Messaging / QStash
 
-| # | Area | Issue | Severity | Time Lost |
-|---|------|-------|----------|-----------|
-| 1 | Audio | TTS returns JSON instead of binary | High | ~1 hour |
-| 2 | Audio | TTS URL is relative, not absolute | Low | ~5 min |
-| 3 | AI Models | Proxy rejects valid `content: null` | High | ~45 min |
-| 4 | AI Models | Transient 500s, no retry guidance | Medium | ~15 min |
-| 5 | Data | Path-based Redis hits URL limits, opaque error | High | ~1 hour |
-| 6 | Data | Docs emphasize path-based over pipeline | Medium | — |
-| 7 | Data | `@upstash/redis` incompatible with x402 | Medium | Ongoing |
-| 8 | Governance | Bearer auth instead of x402 | Medium | ~30 min |
-| 9 | Governance | Undocumented enum values, no agent fieldType | Low | ~20 min |
+### 10. QStash schedules endpoint is undocumented
+
+- **What happened:** Persistent jobs require creating a recurring cron schedule via QStash. The `sapiomScheduleJob` function needed to call `POST /v1/qstash/schedules/{destination}` with an `Upstash-Cron` header to create a schedule. This endpoint is part of the standard QStash API but is not listed in the Sapiom Messaging documentation.
+- **Expected behavior:** The Messaging capability page documents all available QStash operations, including schedules (create, list, delete).
+- **Actual behavior:** The page only documents three endpoints: `publish`, `enqueue`, and `batch`. Schedules work (the proxy forwards to QStash correctly) but are completely undocumented. Additionally, the Publish section's "Rules" note says *"Callback, cron, and flow-control headers are stripped before forwarding"* — which creates ambiguity about whether cron-based scheduling is supported at all.
+- **Impact:** Medium — required inferring the endpoint from the native QStash API docs and hoping the Sapiom proxy forwards it. The "cron headers are stripped" note actively discouraged the correct approach. ~30 minutes of analysis to determine the right path.
+- **Workaround:** Used the undocumented `POST /v1/qstash/schedules/{destination}` path with `Upstash-Cron` header — it works because the proxy maps all `/v1/qstash/*` paths to QStash.
+- **Suggestion:** (a) Add schedules (create, list, get, delete) to the Messaging capability page. (b) Clarify that "cron headers are stripped before forwarding" means stripped from the delivery to the destination (not from QStash processing). (c) Show a schedule example since recurring jobs are a primary QStash use case.
+- **Doc source:** [Messaging](https://docs.sapiom.ai/capabilities/messaging/) — the endpoint table lists only `publish/*destination`, `enqueue/:queueName/*destination`, and `batch`. No mention of `schedules/*destination` or `schedules/:scheduleId`. The Rules section under Publish states: *"Callback, cron, and flow-control headers are stripped before forwarding"* — this suggests cron headers are discarded, when in reality they're processed by QStash and only stripped from the forwarded delivery to the destination.
+
