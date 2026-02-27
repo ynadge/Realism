@@ -9,7 +9,9 @@ function NavLink() {
   const [hasSession, setHasSession] = useState(false)
 
   useEffect(() => {
-    setHasSession(document.cookie.includes('realism-session'))
+    fetch('/api/jobs', { method: 'GET' })
+      .then(res => setHasSession(res.ok))
+      .catch(() => {})
   }, [])
 
   if (!hasSession) return null
