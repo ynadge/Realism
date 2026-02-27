@@ -1,5 +1,12 @@
 import { createFetch } from '@sapiom/fetch'
 
+export class SapiomError extends Error {
+  constructor(public status: number, message: string) {
+    super(message)
+    this.name = 'SapiomError'
+  }
+}
+
 // Lazy singleton — avoids re-creation on hot reload in dev
 let _sapiomFetch: typeof fetch | null = null
 
@@ -29,7 +36,7 @@ async function sapiomPost<T>(url: string, body: Record<string, unknown>): Promis
 
   if (!res.ok) {
     const text = await res.text().catch(() => '(no body)')
-    throw new Error(`Sapiom API error ${res.status} at ${url}: ${text}`)
+    throw new SapiomError(res.status, `Sapiom API error ${res.status} at ${url}: ${text}`)
   }
 
   return res.json() as Promise<T>
@@ -40,7 +47,7 @@ async function sapiomGet<T>(url: string): Promise<T> {
 
   if (!res.ok) {
     const text = await res.text().catch(() => '(no body)')
-    throw new Error(`Sapiom API error ${res.status} at ${url}: ${text}`)
+    throw new SapiomError(res.status, `Sapiom API error ${res.status} at ${url}: ${text}`)
   }
 
   return res.json() as Promise<T>

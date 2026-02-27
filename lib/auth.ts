@@ -1,18 +1,24 @@
-import { randomUUID, createHash } from 'crypto'
 import { setSession, getSession, deleteSession } from '@/lib/redis'
 import type { Session } from '@/types'
 
-function hashUserId(phone: string): string {
-  return createHash('sha256').update(phone).digest('hex').slice(0, 16)
+// Web Crypto API — works in both Node.js and edge runtimes.
+// Avoids importing Node.js `crypto` module which breaks middleware edge runtime.
+
+async function hashUserId(phone: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(phone)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
 }
 
-export function getUserIdFromPhone(phone: string): string {
+export async function getUserIdFromPhone(phone: string): Promise<string> {
   return hashUserId(phone)
 }
 
 export async function createSession(phone: string): Promise<string> {
-  const token = randomUUID()
-  const userId = getUserIdFromPhone(phone)
+  const token = crypto.randomUUID()
+  const userId = await getUserIdFromPhone(phone)
   const now = new Date()
   const expires = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
 

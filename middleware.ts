@@ -1,9 +1,41 @@
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { validateSession } from '@/lib/auth'
 
-// TODO: auth session validation
-export function middleware(_request: NextRequest) {
-  return NextResponse.next()
+const PROTECTED_PREFIXES = ['/dashboard', '/job']
+
+export async function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl
+
+  const isProtected = PROTECTED_PREFIXES.some(prefix =>
+    pathname.startsWith(prefix)
+  )
+
+  if (!isProtected) return NextResponse.next()
+
+  const token = req.cookies.get('realism-session')?.value
+
+  if (!token) {
+    return NextResponse.redirect(new URL('/?auth=required', req.url))
+  }
+
+  try {
+    const userId = await validateSession(token)
+
+    if (!userId) {
+      const response = NextResponse.redirect(new URL('/?auth=required', req.url))
+      response.cookies.delete('realism-session')
+      return response
+    }
+
+    const response = NextResponse.next()
+    response.headers.set('x-user-id', userId)
+    return response
+  } catch (err) {
+    console.error('[middleware] Session validation error:', err)
+    const response = NextResponse.redirect(new URL('/?auth=required', req.url))
+    response.cookies.delete('realism-session')
+    return response
+  }
 }
 
 export const config = {
