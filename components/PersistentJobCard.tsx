@@ -62,7 +62,7 @@ export function PersistentJobCard({ job, onCancelled }: PersistentJobCardProps) 
           {job.goal}
         </p>
 
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-1">
           <MonoLabel variant="muted" size="xs">
             {job.lastRunAt
               ? `Last run: ${relativeTime(job.lastRunAt)}`

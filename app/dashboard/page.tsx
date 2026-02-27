@@ -11,16 +11,28 @@ export default function Dashboard() {
   const router = useRouter()
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   async function loadJobs() {
-    const res = await fetch('/api/jobs')
-    if (res.status === 401) {
-      router.push('/?auth=required')
-      return
+    try {
+      const res = await fetch('/api/jobs')
+      if (res.status === 401) {
+        router.push('/?auth=required')
+        return
+      }
+      if (!res.ok) {
+        setError(`Failed to load jobs (${res.status}).`)
+        setLoading(false)
+        return
+      }
+      const data = await res.json()
+      setJobs(data.jobs ?? [])
+      setError('')
+    } catch {
+      setError('Connection error. Check your network and try again.')
+    } finally {
+      setLoading(false)
     }
-    const data = await res.json()
-    setJobs(data.jobs ?? [])
-    setLoading(false)
   }
 
   useEffect(() => { loadJobs() }, [])
@@ -52,6 +64,28 @@ export default function Dashboard() {
           <MonoLabel variant="muted" size="xs" className="animate-pulse">
             Loading...
           </MonoLabel>
+        )}
+
+        {error && (
+          <SurfaceCard>
+            <MonoLabel variant="error" size="xs">{error}</MonoLabel>
+          </SurfaceCard>
+        )}
+
+        {!loading && !error && jobs.length === 0 && (
+          <SurfaceCard>
+            <div className="flex flex-col items-center gap-3 py-4">
+              <MonoLabel variant="muted" size="xs">
+                Nothing yet. Go make something real.
+              </MonoLabel>
+              <a
+                href="/"
+                className="font-mono text-xs text-accent-lime hover:underline"
+              >
+                ← Start here
+              </a>
+            </div>
+          </SurfaceCard>
         )}
 
         {persistentJobs.length > 0 && (

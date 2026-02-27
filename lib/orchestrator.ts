@@ -446,13 +446,14 @@ export async function* runOrchestrator(
         }
       }
 
-      // Ensure content is populated — strip the ARTIFACT_JSON block from full response
+      // Ensure content is populated — strip ARTIFACT_JSON block from full response
       if (!artifact.content) {
         const stripped = fullContent
           .replace(/ARTIFACT_JSON[\s\S]*?END_ARTIFACT_JSON/g, '')
+          .replace(/ARTIFACT_JSON[\s\S]*/g, '')
           .replace(/```json[\s\S]*?```/g, '')
           .trim()
-        artifact.content = stripped || fullContent
+        artifact.content = stripped || artifact.summary || ''
       }
 
       // Inject sideband assets that the LLM can't reproduce in its output
