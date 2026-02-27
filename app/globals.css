@@ -130,18 +130,51 @@
   }
 }
 
+/* Noise overlay — adds tactile depth to flat backgrounds */
+.bg-noise {
+  position: relative;
+}
+.bg-noise::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 128px 128px;
+  opacity: 0.035;
+  pointer-events: none;
+  z-index: 0;
+}
+.bg-noise > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Gradient mesh — soft atmospheric depth */
+.bg-mesh {
+  background-color: hsl(0 0% 4%);
+  background-image:
+    radial-gradient(ellipse 80% 50% at 20% 40%, hsl(71 100% 64% / 0.04) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 80% 70%, hsl(240 50% 20% / 0.08) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 60% at 50% 10%, hsl(0 0% 8% / 0.6) 0%, transparent 70%);
+}
+
 @keyframes stream-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes live-pulse {
   0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.4); opacity: 0.7; }
+  50%      { transform: scale(1.4); opacity: 0.7; }
 }
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-up   { animation: fade-up 500ms ease-out forwards; }
+.animate-fade-up-1 { animation: fade-up 500ms 100ms ease-out both; }
+.animate-fade-up-2 { animation: fade-up 500ms 200ms ease-out both; }
+.animate-fade-up-3 { animation: fade-up 500ms 350ms ease-out both; }
+.animate-fade-up-4 { animation: fade-up 500ms 500ms ease-out both; }
