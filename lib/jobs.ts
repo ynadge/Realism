@@ -3,6 +3,7 @@ import { setJob, getJob, updateJob } from '@/lib/redis'
 import type { Job, JobType, JobCadence, Artifact } from '@/types'
 
 export async function createJob(params: {
+  id?: string
   userId: string
   goal: string
   budget: number
@@ -12,7 +13,7 @@ export async function createJob(params: {
   qstashScheduleId?: string
 }): Promise<Job> {
   const job: Job = {
-    id: randomUUID(),
+    id: params.id ?? randomUUID(),
     userId: params.userId,
     goal: params.goal,
     budget: params.budget,
