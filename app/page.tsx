@@ -9,7 +9,7 @@ function NavLink() {
   const [hasSession, setHasSession] = useState(false)
 
   useEffect(() => {
-    fetch('/api/jobs', { method: 'GET' })
+    fetch('/api/auth/status')
       .then(res => setHasSession(res.ok))
       .catch(() => {})
   }, [])

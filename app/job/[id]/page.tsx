@@ -161,9 +161,9 @@ function JobPageContent() {
           </SurfaceCard>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
 
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 min-w-0">
             <SurfaceCard>
               <JobStream events={events} isLive={isLive} />
             </SurfaceCard>
@@ -173,7 +173,7 @@ function JobPageContent() {
             </SurfaceCard>
           </div>
 
-          <div>
+          <div className="min-w-0">
             <ArtifactViewer artifact={artifact} isLoading={isLive} />
           </div>
         </div>
