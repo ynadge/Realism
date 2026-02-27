@@ -1,8 +1,28 @@
+'use client'
+
+import { Suspense, useEffect, useState } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
+import { AuthModal } from '@/components/AuthModal'
 import { LiveDot } from '@/components/ui/LiveDot'
 import { MonoLabel } from '@/components/ui/MonoLabel'
 import { SurfaceCard } from '@/components/ui/SurfaceCard'
 
-export default function Home() {
+function HomeContent() {
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const [authOpen, setAuthOpen] = useState(false)
+
+  useEffect(() => {
+    if (searchParams.get('auth') === 'required') {
+      setAuthOpen(true)
+    }
+  }, [searchParams])
+
+  function handleAuthSuccess() {
+    setAuthOpen(false)
+    router.push('/dashboard')
+  }
+
   return (
     <main className="bg-mesh bg-noise min-h-screen flex flex-col items-center justify-center gap-8 px-4">
 
@@ -17,15 +37,14 @@ export default function Home() {
         </h1>
       </div>
 
+      {/* Design system check cards — will be replaced by GoalInput in Ticket 005 */}
       <div className="animate-fade-up-3 flex flex-col gap-3 w-full max-w-md">
-
         <SurfaceCard>
           <div className="flex items-center gap-2">
             <LiveDot />
             <MonoLabel variant="muted" size="xs">LIVE — design system check</MonoLabel>
           </div>
         </SurfaceCard>
-
         <SurfaceCard>
           <div className="flex flex-wrap gap-3">
             <MonoLabel variant="accent">$0.034</MonoLabel>
@@ -35,7 +54,6 @@ export default function Home() {
             <MonoLabel variant="error">failed</MonoLabel>
           </div>
         </SurfaceCard>
-
         <SurfaceCard>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -45,9 +63,22 @@ export default function Home() {
             <MonoLabel variant="muted" size="xs">$0.006</MonoLabel>
           </div>
         </SurfaceCard>
-
       </div>
 
+      <AuthModal
+        open={authOpen}
+        onSuccess={handleAuthSuccess}
+        onClose={() => setAuthOpen(false)}
+      />
+
     </main>
+  )
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={null}>
+      <HomeContent />
+    </Suspense>
   )
 }
