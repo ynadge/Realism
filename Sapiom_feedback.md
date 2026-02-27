@@ -1,6 +1,6 @@
 # Sapiom API Feedback
 
-> Observations collected during the Realism build (Tickets 000–006).
+> Observations collected during the Realism build.
 > Each entry documents a friction point, unexpected behavior, or inefficiency encountered while using Sapiom's unified capability stack in a real agentic application.
 
 ---
