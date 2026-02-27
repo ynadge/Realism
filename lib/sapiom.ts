@@ -10,7 +10,7 @@ export class SapiomError extends Error {
 // Lazy singleton — avoids re-creation on hot reload in dev
 let _sapiomFetch: typeof fetch | null = null
 
-function getSapiomFetch(): typeof fetch {
+export function getSapiomFetch(): typeof fetch {
   if (_sapiomFetch) return _sapiomFetch
 
   const apiKey = process.env.SAPIOM_API_KEY
@@ -189,7 +189,7 @@ const ELEVENLABS_BASE = 'https://elevenlabs.services.sapiom.ai'
 export async function sapiomTextToSpeech(
   text: string,
   voiceId = 'JBFqnCBsd6RMkjVDRZzb'
-): Promise<ArrayBuffer> {
+): Promise<{ audioUrl: string; expiresAt: string }> {
   const res = await getSapiomFetch()(`${ELEVENLABS_BASE}/v1/text-to-speech/${voiceId}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -204,7 +204,12 @@ export async function sapiomTextToSpeech(
     throw new Error(`sapiomTextToSpeech error ${res.status}: ${body}`)
   }
 
-  return res.arrayBuffer()
+  const data = await res.json() as { url: string; expiresAt: string }
+  const audioUrl = data.url.startsWith('http')
+    ? data.url
+    : `${ELEVENLABS_BASE}${data.url}`
+
+  return { audioUrl, expiresAt: data.expiresAt }
 }
 
 export async function sapiomListVoices(): Promise<{
@@ -214,25 +219,76 @@ export async function sapiomListVoices(): Promise<{
 }
 
 // ─── Governance (Spending Rules) ─────────────────────────────────────────────
-// Docs: https://docs.sapiom.ai/governance/rules/
+// Docs: https://docs.sapiom.ai/api-reference/endpoints/rules/v1-spending-rules-post/
+// NOTE: Governance API uses Bearer auth, NOT x402 — use raw fetch.
 
 export async function sapiomCreateSpendRule(
   jobId: string,
   budgetUSD: number
 ): Promise<{ id: string; status: string }> {
-  return sapiomPost('https://api.sapiom.ai/v1/spending-rules', {
-    name: `realism-job-${jobId}`,
-    maxAmount: budgetUSD,
-    period: 'per-run',
-    agentName: jobId,
+  const apiKey = process.env.SAPIOM_API_KEY
+  if (!apiKey) throw new Error('SAPIOM_API_KEY is not set')
+
+  const res = await fetch('https://api.sapiom.ai/v1/spending-rules', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      name: `realism-job-${jobId}`,
+      ruleType: 'usage_limit',
+      resolutionStrategy: 'automatic',
+      metadata: { source: 'realism', jobId },
+      conditions: [
+        {
+          fieldType: 'service',
+          fieldName: 'all',
+          operator: 'equals',
+          value: 'all',
+          conditionGroup: 'primary',
+        },
+      ],
+      parameters: [
+        {
+          parameterName: 'Job budget cap',
+          limitValue: String(budgetUSD),
+          measurementType: 'sum_payment_amount',
+          intervalValue: 720,
+          intervalUnit: 'hours',
+          isRolling: false,
+          measurementScope: 'all',
+          description: `Budget cap of $${budgetUSD.toFixed(2)} for job ${jobId}`,
+        },
+      ],
+    }),
   })
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '(no body)')
+    throw new SapiomError(res.status, `Spending rule creation failed (${res.status}): ${text}`)
+  }
+
+  return res.json()
 }
 
 export async function sapiomGetAnalytics(jobId: string): Promise<{
   totalSpend: number
   breakdown: Array<{ service: string; cost: number; calls: number }>
 }> {
-  return sapiomGet(`https://api.sapiom.ai/v1/analytics/summary?agentName=${jobId}`)
+  const apiKey = process.env.SAPIOM_API_KEY
+  if (!apiKey) throw new Error('SAPIOM_API_KEY is not set')
+
+  const res = await fetch(`https://api.sapiom.ai/v1/analytics/summary?agentName=realism-${jobId}`, {
+    headers: { 'Authorization': `Bearer ${apiKey}` },
+  })
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '(no body)')
+    throw new SapiomError(res.status, `Analytics fetch failed (${res.status}): ${text}`)
+  }
+
+  return res.json()
 }
 
 // ─── Messaging (QStash) ──────────────────────────────────────────────────────

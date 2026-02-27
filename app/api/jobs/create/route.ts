@@ -59,8 +59,9 @@ export async function POST(req: NextRequest) {
     const spendRule = await sapiomCreateSpendRule(jobId, budget)
     spendRuleId = spendRule.id
   } catch (err) {
-    console.error('[jobs/create] Failed to create spending rule:', err)
-    return NextResponse.json({ error: 'Failed to create spending rule.' }, { status: 500 })
+    // Non-fatal: orchestrator enforces budget in its own loop.
+    // Spending rule is an extra safety net, not a hard dependency.
+    console.warn('[jobs/create] Spending rule creation failed (non-fatal):', err)
   }
 
   try {

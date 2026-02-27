@@ -2,7 +2,8 @@ import { createFetch } from '@sapiom/fetch'
 import type { Job, Session, SpendEvent, Artifact } from '@/types'
 
 // ─── Transport layer ──────────────────────────────────────────────────────────
-// Sapiom Redis is accessed via REST: POST {REDIS_URL}/{command}/{arg1}/{arg2}/...
+// Sapiom Redis is accessed via REST using the pipeline endpoint to avoid
+// URL length limits when storing large values (e.g. jobs with embedded artifacts).
 // Auth is handled by the @sapiom/fetch SDK (x402 payment protocol).
 
 let _sapiomFetch: ReturnType<typeof createFetch> | null = null
@@ -25,8 +26,11 @@ function getRedisUrl(): string {
 }
 
 async function redisCmd<T>(command: string, ...args: string[]): Promise<T> {
-  const path = [command, ...args].join('/')
-  const res = await getFetch()(`${getRedisUrl()}/${path}`, { method: 'POST' })
+  const res = await getFetch()(`${getRedisUrl()}/pipeline`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify([[command.toUpperCase(), ...args]]),
+  })
 
   if (!res.ok) {
     const text = await res.text().catch(() => '(no body)')
@@ -34,55 +38,55 @@ async function redisCmd<T>(command: string, ...args: string[]): Promise<T> {
   }
 
   const data = await res.json()
-  return data.result as T
+  const first = Array.isArray(data) ? data[0] : data
+  if (first?.error) throw new Error(`Redis ${command} error: ${first.error}`)
+  return first?.result as T
 }
 
-// SET with optional TTL in seconds
 async function redisSet(key: string, value: unknown, exSeconds?: number): Promise<void> {
-  const serialized = encodeURIComponent(JSON.stringify(value))
+  const serialized = JSON.stringify(value)
   if (exSeconds) {
-    await redisCmd('set', key, serialized, 'EX', String(exSeconds))
+    await redisCmd('SET', key, serialized, 'EX', String(exSeconds))
   } else {
-    await redisCmd('set', key, serialized)
+    await redisCmd('SET', key, serialized)
   }
 }
 
 async function redisGet<T>(key: string): Promise<T | null> {
-  const raw = await redisCmd<string | null>('get', key)
+  const raw = await redisCmd<string | null>('GET', key)
   if (raw === null || raw === undefined) return null
   try {
-    return JSON.parse(decodeURIComponent(raw)) as T
+    return JSON.parse(raw) as T
   } catch {
+    try { return JSON.parse(decodeURIComponent(raw)) as T } catch { /* ignore */ }
     return raw as unknown as T
   }
 }
 
 async function redisDel(key: string): Promise<void> {
-  await redisCmd('del', key)
+  await redisCmd('DEL', key)
 }
 
 async function redisSadd(key: string, member: string): Promise<void> {
-  await redisCmd('sadd', key, member)
+  await redisCmd('SADD', key, member)
 }
 
 async function redisSmembers(key: string): Promise<string[]> {
-  const result = await redisCmd<string[]>('smembers', key)
+  const result = await redisCmd<string[]>('SMEMBERS', key)
   return result ?? []
 }
 
 async function redisRpush(key: string, value: string): Promise<void> {
-  await redisCmd('rpush', key, encodeURIComponent(value))
+  await redisCmd('RPUSH', key, value)
 }
 
 async function redisLrange(key: string, start: number, end: number): Promise<string[]> {
-  const result = await redisCmd<string[]>('lrange', key, String(start), String(end))
-  return (result ?? []).map(item => {
-    try { return decodeURIComponent(item) } catch { return item }
-  })
+  const result = await redisCmd<string[]>('LRANGE', key, String(start), String(end))
+  return result ?? []
 }
 
 async function redisExpire(key: string, seconds: number): Promise<void> {
-  await redisCmd('expire', key, String(seconds))
+  await redisCmd('EXPIRE', key, String(seconds))
 }
 
 // ─── Key schema ───────────────────────────────────────────────────────────────

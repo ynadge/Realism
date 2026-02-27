@@ -15,33 +15,38 @@ import { createFetch } from '@sapiom/fetch'
   const sapiomFetch = createFetch({ apiKey: API_KEY })
 
   async function redisCmd(command: string, ...args: string[]) {
-    const path = [command, ...args].join('/')
-    const res = await sapiomFetch(`${REDIS_URL}/${path}`, { method: 'POST' })
+    const res = await sapiomFetch(`${REDIS_URL}/pipeline`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify([[command.toUpperCase(), ...args]]),
+    })
     if (!res.ok) {
       const text = await res.text()
       throw new Error(`Redis ${command} failed (${res.status}): ${text}`)
     }
     const data = await res.json()
-    return data.result
+    const first = Array.isArray(data) ? data[0] : data
+    if (first?.error) throw new Error(`Redis ${command} error: ${first.error}`)
+    return first?.result
   }
 
   try {
     // SET with 60s TTL
-    const testValue = encodeURIComponent(JSON.stringify({ ok: true, ts: Date.now() }))
-    await redisCmd('set', 'realism:test', testValue, 'EX', '60')
+    const testValue = JSON.stringify({ ok: true, ts: Date.now() })
+    await redisCmd('SET', 'realism:test', testValue, 'EX', '60')
     console.log('✅ SET succeeded')
 
     // GET
-    const raw = await redisCmd('get', 'realism:test')
-    const value = JSON.parse(decodeURIComponent(raw))
+    const raw = await redisCmd('GET', 'realism:test')
+    const value = JSON.parse(raw)
     console.log('✅ GET succeeded:', value)
 
     // DEL
-    await redisCmd('del', 'realism:test')
+    await redisCmd('DEL', 'realism:test')
     console.log('✅ DEL succeeded')
 
     // Verify DEL
-    const gone = await redisCmd('get', 'realism:test')
+    const gone = await redisCmd('GET', 'realism:test')
     if (gone === null) {
       console.log('✅ DEL verified (key is gone)')
     }

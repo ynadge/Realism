@@ -64,7 +64,7 @@ export const GoalInput = forwardRef<GoalInputHandle, GoalInputProps>(
           return
         }
 
-        router.push(`/job/${data.jobId}`)
+        router.push(`/job/${data.jobId}?budget=${budget.toFixed(2)}`)
       } catch {
         setError('Connection error. Check your network and try again.')
       } finally {
