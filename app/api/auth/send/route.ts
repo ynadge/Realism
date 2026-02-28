@@ -35,6 +35,14 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    if (result.status === 'blocked') {
+      console.warn('[auth/send] Prelude blocked SMS delivery for:', phone)
+      return NextResponse.json(
+        { error: 'SMS delivery was blocked. Please wait a few minutes and try again, or use a different phone number.' },
+        { status: 429 }
+      )
+    }
+
     return NextResponse.json({ verificationId: result.id })
   } catch (err) {
     if (err instanceof SapiomError && err.status === 429) {
