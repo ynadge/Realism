@@ -1,6 +1,8 @@
 import { SignJWT, jwtVerify } from 'jose'
 import { blockToken, isTokenBlocked } from '@/lib/upstash'
 
+export type ContactType = 'phone' | 'email'
+
 function getJwtSecret(): Uint8Array {
   const secret = process.env.NEXTAUTH_SECRET
   if (!secret) {
@@ -16,22 +18,28 @@ const ALGORITHM = 'HS256'
 
 // Web Crypto API for hashing — required because this module is imported by
 // middleware.ts (edge runtime), which cannot load Node's crypto module.
-async function hashUserId(phone: string): Promise<string> {
-  const data = new TextEncoder().encode(phone)
+async function hashUserId(contact: string): Promise<string> {
+  const data = new TextEncoder().encode(contact)
   const hashBuffer = await crypto.subtle.digest('SHA-256', data)
   const hashArray = Array.from(new Uint8Array(hashBuffer))
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
 }
 
-export async function getUserIdFromPhone(phone: string): Promise<string> {
-  return hashUserId(phone)
+export async function getUserIdFromContact(contact: string): Promise<string> {
+  return hashUserId(contact)
 }
 
-export async function createSession(phone: string): Promise<string> {
-  const userId = await getUserIdFromPhone(phone)
+/** @deprecated Use getUserIdFromContact */
+export const getUserIdFromPhone = getUserIdFromContact
+
+export async function createSession(
+  contact: string,
+  contactType: ContactType = 'phone'
+): Promise<string> {
+  const userId = await getUserIdFromContact(contact)
   const jti = crypto.randomUUID()
 
-  const token = await new SignJWT({ userId, phone })
+  const token = await new SignJWT({ userId, contact, contactType })
     .setProtectedHeader({ alg: ALGORITHM })
     .setJti(jti)
     .setIssuedAt()

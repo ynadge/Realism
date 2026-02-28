@@ -63,12 +63,15 @@ async function sapiomGet<T>(url: string): Promise<T> {
 
 const PRELUDE_BASE = 'https://prelude.services.sapiom.ai'
 
-export async function sapiomVerifySend(phoneNumber: string): Promise<{
+export async function sapiomVerifySend(
+  value: string,
+  type: 'phone_number' | 'email_address' = 'phone_number'
+): Promise<{
   id: string
   status: string
 }> {
   return sapiomPost(`${PRELUDE_BASE}/verifications`, {
-    target: { type: 'phone_number', value: phoneNumber },
+    target: { type, value },
   })
 }
 

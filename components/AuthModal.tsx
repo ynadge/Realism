@@ -9,9 +9,11 @@ type AuthModalProps = {
   onClose?: () => void
 }
 
-type ModalStep = 'phone' | 'sending' | 'code' | 'verifying'
+type AuthMethod = 'phone' | 'email'
+type ModalStep = 'input' | 'sending' | 'code' | 'verifying'
 
 const E164_REGEX = /^\+[1-9]\d{1,14}$/
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function maskPhone(phone: string): string {
   if (phone.length < 5) return phone
@@ -20,16 +22,25 @@ function maskPhone(phone: string): string {
   return `${country} \u2022\u2022\u2022\u2022 \u2022\u2022${last4}`
 }
 
+function maskEmail(email: string): string {
+  const [local, domain] = email.split('@')
+  if (!domain) return email
+  const visible = local.slice(0, 2)
+  return `${visible}\u2022\u2022\u2022@${domain}`
+}
+
 export function AuthModal({ open, onSuccess, onClose }: AuthModalProps) {
-  const [step, setStep] = useState<ModalStep>('phone')
+  const [method, setMethod] = useState<AuthMethod>('phone')
+  const [step, setStep] = useState<ModalStep>('input')
   const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
   const [verificationId, setVerificationId] = useState('')
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const codeInputRef = useRef<HTMLInputElement>(null)
 
-  const resetToPhone = useCallback(() => {
-    setStep('phone')
+  const resetToInput = useCallback(() => {
+    setStep('input')
     setCode('')
     setVerificationId('')
     setError('')
@@ -37,29 +48,41 @@ export function AuthModal({ open, onSuccess, onClose }: AuthModalProps) {
 
   if (!open) return null
 
+  const contactValue = method === 'email' ? email.trim().toLowerCase() : phone.trim()
+
   async function handleSend() {
     setError('')
 
-    const trimmed = phone.trim()
-    if (!trimmed || !E164_REGEX.test(trimmed)) {
-      setError('Use E.164 format: +15551234567')
-      return
+    if (method === 'phone') {
+      if (!contactValue || !E164_REGEX.test(contactValue)) {
+        setError('Use E.164 format: +15551234567')
+        return
+      }
+    } else {
+      if (!contactValue || !EMAIL_REGEX.test(contactValue)) {
+        setError('Enter a valid email address.')
+        return
+      }
     }
 
     setStep('sending')
 
     try {
+      const body = method === 'email'
+        ? { email: contactValue }
+        : { phone: contactValue }
+
       const res = await fetch('/api/auth/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: trimmed }),
+        body: JSON.stringify(body),
       })
 
       const data = await res.json()
 
       if (!res.ok) {
         setError(data.error || 'Failed to send code.')
-        setStep('phone')
+        setStep('input')
         return
       }
 
@@ -68,7 +91,7 @@ export function AuthModal({ open, onSuccess, onClose }: AuthModalProps) {
       setTimeout(() => codeInputRef.current?.focus(), 50)
     } catch {
       setError('Network error. Try again.')
-      setStep('phone')
+      setStep('input')
     }
   }
 
@@ -82,14 +105,14 @@ export function AuthModal({ open, onSuccess, onClose }: AuthModalProps) {
     setStep('verifying')
 
     try {
+      const body = method === 'email'
+        ? { verificationId, code: codeToVerify, email: contactValue }
+        : { verificationId, code: codeToVerify, phone: contactValue }
+
       const res = await fetch('/api/auth/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          verificationId,
-          code: codeToVerify,
-          phone: phone.trim(),
-        }),
+        body: JSON.stringify(body),
       })
 
       const data = await res.json()
@@ -122,7 +145,7 @@ export function AuthModal({ open, onSuccess, onClose }: AuthModalProps) {
     }
   }
 
-  function handlePhoneKeyDown(e: React.KeyboardEvent) {
+  function handleInputKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter') handleSend()
   }
 
@@ -130,7 +153,12 @@ export function AuthModal({ open, onSuccess, onClose }: AuthModalProps) {
     if (e.key === 'Enter') handleVerify()
   }
 
-  const isPhoneStep = step === 'phone' || step === 'sending'
+  function switchMethod() {
+    setMethod(m => m === 'phone' ? 'email' : 'phone')
+    setError('')
+  }
+
+  const isInputStep = step === 'input' || step === 'sending'
   const isSending = step === 'sending'
   const isCodeStep = step === 'code' || step === 'verifying'
   const isVerifying = step === 'verifying'
@@ -143,31 +171,48 @@ export function AuthModal({ open, onSuccess, onClose }: AuthModalProps) {
     >
       <div className="max-w-sm w-full bg-surface border border-border rounded-md p-6 animate-fade-up">
 
-        {isPhoneStep && (
+        {isInputStep && (
           <div className="flex flex-col gap-4">
             <div>
               <h2 className="font-display text-lg font-semibold text-foreground">
-                Enter your number.
+                {method === 'phone' ? 'Enter your number.' : 'Enter your email.'}
               </h2>
               <p className="font-mono text-muted-foreground text-xs mt-1">
                 We&apos;ll send a one-time code.
               </p>
             </div>
 
-            <input
-              type="tel"
-              value={phone}
-              onChange={e => { setPhone(e.target.value); setError('') }}
-              onKeyDown={handlePhoneKeyDown}
-              placeholder="+1 555 000 0000"
-              disabled={isSending}
-              autoFocus
-              className={`w-full py-3 px-4 bg-background border rounded-md text-foreground font-mono text-base placeholder:text-muted-foreground/50 outline-none transition-colors ${
-                hasError
-                  ? 'border-error'
-                  : 'border-border focus:border-accent-lime'
-              } disabled:opacity-50`}
-            />
+            {method === 'phone' ? (
+              <input
+                type="tel"
+                value={phone}
+                onChange={e => { setPhone(e.target.value); setError('') }}
+                onKeyDown={handleInputKeyDown}
+                placeholder="+1 555 000 0000"
+                disabled={isSending}
+                autoFocus
+                className={`w-full py-3 px-4 bg-background border rounded-md text-foreground font-mono text-base placeholder:text-muted-foreground/50 outline-none transition-colors ${
+                  hasError
+                    ? 'border-error'
+                    : 'border-border focus:border-accent-lime'
+                } disabled:opacity-50`}
+              />
+            ) : (
+              <input
+                type="email"
+                value={email}
+                onChange={e => { setEmail(e.target.value); setError('') }}
+                onKeyDown={handleInputKeyDown}
+                placeholder="you@example.com"
+                disabled={isSending}
+                autoFocus
+                className={`w-full py-3 px-4 bg-background border rounded-md text-foreground font-mono text-base placeholder:text-muted-foreground/50 outline-none transition-colors ${
+                  hasError
+                    ? 'border-error'
+                    : 'border-border focus:border-accent-lime'
+                } disabled:opacity-50`}
+              />
+            )}
 
             {hasError && (
               <MonoLabel variant="error" size="xs">{error}</MonoLabel>
@@ -180,6 +225,14 @@ export function AuthModal({ open, onSuccess, onClose }: AuthModalProps) {
             >
               {isSending ? 'Sending...' : 'Send code \u2192'}
             </button>
+
+            <button
+              onClick={switchMethod}
+              disabled={isSending}
+              className="font-mono text-muted-foreground text-xs hover:text-foreground transition-colors disabled:opacity-50"
+            >
+              {method === 'phone' ? 'Use email instead' : 'Use phone instead'}
+            </button>
           </div>
         )}
 
@@ -187,10 +240,10 @@ export function AuthModal({ open, onSuccess, onClose }: AuthModalProps) {
           <div className="flex flex-col gap-4">
             <div>
               <h2 className="font-display text-lg font-semibold text-foreground">
-                Check your phone.
+                {method === 'phone' ? 'Check your phone.' : 'Check your inbox.'}
               </h2>
               <p className="font-mono text-muted-foreground text-xs mt-1">
-                {maskPhone(phone.trim())}
+                {method === 'phone' ? maskPhone(phone.trim()) : maskEmail(email.trim())}
               </p>
             </div>
 
@@ -225,11 +278,11 @@ export function AuthModal({ open, onSuccess, onClose }: AuthModalProps) {
             </button>
 
             <button
-              onClick={resetToPhone}
+              onClick={resetToInput}
               disabled={isVerifying}
               className="font-mono text-muted-foreground text-xs hover:text-foreground transition-colors disabled:opacity-50"
             >
-              &larr; Wrong number?
+              {method === 'phone' ? '\u2190 Wrong number?' : '\u2190 Wrong email?'}
             </button>
           </div>
         )}

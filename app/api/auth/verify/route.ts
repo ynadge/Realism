@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sapiomVerifyCheck, SapiomError } from '@/lib/sapiom'
 import { createSession } from '@/lib/auth'
+import type { ContactType } from '@/lib/auth'
 
 const COOKIE_NAME = 'realism-session'
 const THIRTY_DAYS = 60 * 60 * 24 * 30
 
 export async function POST(req: NextRequest) {
-  let body: { verificationId?: string; code?: string; phone?: string }
+  let body: {
+    verificationId?: string
+    code?: string
+    phone?: string
+    email?: string
+    contactType?: ContactType
+  }
   try {
     body = await req.json()
   } catch {
@@ -16,7 +23,7 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const { verificationId, code, phone } = body
+  const { verificationId, code } = body
 
   if (!verificationId || !code) {
     return NextResponse.json(
@@ -25,9 +32,12 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  if (!phone) {
+  const contact = body.email?.trim().toLowerCase() || body.phone?.trim()
+  const contactType: ContactType = body.email ? 'email' : 'phone'
+
+  if (!contact) {
     return NextResponse.json(
-      { error: 'phone is required.' },
+      { error: 'Phone or email is required.' },
       { status: 400 }
     )
   }
@@ -43,7 +53,7 @@ export async function POST(req: NextRequest) {
     const result = await sapiomVerifyCheck(verificationId, code)
 
     if (result.status === 'success') {
-      const token = await createSession(phone)
+      const token = await createSession(contact, contactType)
 
       const response = NextResponse.json({ success: true })
       response.cookies.set({
@@ -65,7 +75,6 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // 'pending' or unexpected status
     return NextResponse.json(
       { error: 'Verification still pending. Please try again.' },
       { status: 400 }
