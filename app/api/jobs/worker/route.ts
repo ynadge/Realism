@@ -1,21 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getJob, completeJob, failJob, recordRun } from '@/lib/jobs'
-import { runOrchestratorStep } from '@/lib/orchestrator'
-import { sapiomPublishMessage } from '@/lib/sapiom'
+import { getJob } from '@/lib/jobs'
+import { runJob } from '@/lib/orchestrator'
 
 export const maxDuration = 60
 
-const isLocalDev = process.env.NEXT_PUBLIC_APP_URL?.includes('localhost')
-
 export async function POST(req: NextRequest) {
-  let body: { jobId?: string; expectedIteration?: number }
+  let body: { jobId?: string }
   try {
     body = await req.json()
   } catch {
     return NextResponse.json({ ok: false, error: 'Invalid body' })
   }
 
-  const { jobId, expectedIteration } = body
+  const { jobId } = body
   if (!jobId) {
     return NextResponse.json({ ok: false, error: 'jobId required' })
   }
@@ -24,43 +21,14 @@ export async function POST(req: NextRequest) {
   if (!job) {
     return NextResponse.json({ ok: false, error: 'Job not found' })
   }
-  if (job.status !== 'running') {
+  if (job.status !== 'pending' && job.status !== 'running') {
     return NextResponse.json({ ok: true, skipped: true })
   }
 
-  const result = await runOrchestratorStep(job, expectedIteration)
-
-  if (result.done) {
-    if (result.outcome === 'completed') {
-      if (job.type === 'persistent') {
-        await recordRun(jobId, result.artifact, 0)
-      } else {
-        await completeJob(jobId, result.artifact)
-      }
-    } else {
-      await failJob(jobId, result.reason)
-    }
-    return NextResponse.json({ ok: true, done: true })
+  try {
+    await runJob(job)
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    return NextResponse.json({ ok: false, error: String(err) })
   }
-
-  const workerUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/jobs/worker`
-
-  if (isLocalDev) {
-    fetch(workerUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jobId, expectedIteration: result.iteration }),
-    }).catch(err => console.error(`[worker] Local next-step call failed:`, err))
-  } else {
-    try {
-      await sapiomPublishMessage(workerUrl, {
-        jobId,
-        expectedIteration: result.iteration,
-      })
-    } catch (err) {
-      console.error(`[worker] Failed to enqueue next step for ${jobId}:`, err)
-    }
-  }
-
-  return NextResponse.json({ ok: true, done: false })
 }

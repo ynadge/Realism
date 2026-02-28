@@ -1,7 +1,7 @@
 # Project architecture & tickets (internal reference only)
 architecture.md
 website_builder.md
-ticket_*.md
+tickets/
 
 # Temp scaffold (locked binary, safe to delete when dev server is stopped)
 realism-temp/

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getJob, startJob } from '@/lib/jobs'
-import { sapiomPublishMessage } from '@/lib/sapiom'
+import { getJob, recordRun } from '@/lib/jobs'
+import { getArtifact } from '@/lib/redis'
+import { runJob } from '@/lib/orchestrator'
+
+export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
   let jobId: string | undefined
@@ -27,15 +30,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, skipped: true })
   }
 
-  await startJob(jobId)
-
-  const workerUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/jobs/worker`
   try {
-    await sapiomPublishMessage(workerUrl, { jobId, expectedIteration: 0 })
+    await runJob(job)
+    const artifact = await getArtifact(jobId)
+    if (artifact) await recordRun(jobId, artifact, 0)
   } catch (err) {
-    console.error(`[webhook] Failed to enqueue job ${jobId}:`, err)
-    return NextResponse.json({ ok: false, error: 'Failed to enqueue' })
+    console.error(`[webhook] Job ${jobId} failed:`, err)
   }
 
+  // Always 200 to prevent QStash retries
   return NextResponse.json({ ok: true })
 }

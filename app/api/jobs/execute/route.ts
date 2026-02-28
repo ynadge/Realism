@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getJob, startJob } from '@/lib/jobs'
+import { getJob } from '@/lib/jobs'
 import { validateSession } from '@/lib/auth'
 import { sapiomPublishMessage } from '@/lib/sapiom'
 
@@ -27,20 +27,17 @@ export async function POST(req: NextRequest) {
   if (job.userId !== userId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   if (job.status !== 'pending') return NextResponse.json({ error: 'Job already started' }, { status: 409 })
 
-  await startJob(jobId)
-
   const workerUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/jobs/worker`
 
   if (isLocalDev) {
-    // QStash can't reach localhost — call worker directly via internal fetch
     fetch(workerUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jobId, expectedIteration: 0 }),
+      body: JSON.stringify({ jobId }),
     }).catch(err => console.error(`[execute] Local worker call failed:`, err))
   } else {
     try {
-      await sapiomPublishMessage(workerUrl, { jobId, expectedIteration: 0 })
+      await sapiomPublishMessage(workerUrl, { jobId })
     } catch (err) {
       console.error(`[execute] Failed to enqueue job ${jobId}:`, err)
       return NextResponse.json({ error: 'Failed to start job processing.' }, { status: 500 })
