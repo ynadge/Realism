@@ -112,9 +112,12 @@ function JobPageContent() {
         }
       }
 
-      es.onerror = () => {
-        setIsLive(false)
+      es.onerror = async () => {
         es?.close()
+        // SSE died (timeout, network issue, etc.) — try loading persisted
+        // data since the worker may have finished while we were disconnected.
+        await loadPersistedData()
+        setIsLive(false)
       }
     }
 

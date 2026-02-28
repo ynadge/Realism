@@ -21,7 +21,8 @@ export async function GET(
   if (job.userId !== userId) return new Response('Forbidden', { status: 403 })
 
   let index = 0
-  let keepAlive: ReturnType<typeof setInterval>
+  let pollInterval: ReturnType<typeof setInterval>
+  let pingInterval: ReturnType<typeof setInterval>
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -29,6 +30,12 @@ export async function GET(
 
       function send(data: object) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
+      }
+
+      function sendPing() {
+        try {
+          controller.enqueue(encoder.encode(`: keepalive\n\n`))
+        } catch { /* stream already closed */ }
       }
 
       async function poll() {
@@ -42,7 +49,8 @@ export async function GET(
                 send(event)
 
                 if (event.type === 'complete' || event.type === 'error') {
-                  clearInterval(keepAlive)
+                  clearInterval(pollInterval)
+                  clearInterval(pingInterval)
                   controller.close()
                   return
                 }
@@ -54,11 +62,15 @@ export async function GET(
       }
 
       await poll()
-      keepAlive = setInterval(poll, 500)
+      pollInterval = setInterval(poll, 500)
+      // Send SSE comments every 10s to keep the connection alive during
+      // long gaps between worker steps (LLM calls can take 30s+).
+      pingInterval = setInterval(sendPing, 10_000)
     },
 
     cancel() {
-      clearInterval(keepAlive)
+      clearInterval(pollInterval)
+      clearInterval(pingInterval)
     },
   })
 
