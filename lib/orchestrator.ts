@@ -7,7 +7,14 @@ import {
   sapiomGenerateImage,
   sapiomTextToSpeech,
 } from '@/lib/sapiom'
-import { appendSpendEvent, setArtifact } from '@/lib/redis'
+import {
+  appendSpendEvent,
+  setArtifact,
+  setOrchestratorState,
+  getOrchestratorState,
+  deleteOrchestratorState,
+  appendStreamEvent,
+} from '@/lib/redis'
 import { completeJob, failJob, startJob, addSpend } from '@/lib/jobs'
 import type { Job, SpendEvent, Artifact, StreamEvent } from '@/types'
 
@@ -528,4 +535,227 @@ export async function* runOrchestrator(
 
   await failJob(job.id, 'Max iterations reached')
   yield { type: 'error', payload: { message: 'Job took too many steps. Partial results may be available.' } }
+}
+
+// ─── Background step execution ──────────────────────────────────────────────
+// Instead of running the full loop in one invocation (which times out on
+// serverless), `runOrchestratorStep` executes ONE LLM call + its tool calls,
+// persists state to Redis, and returns. The caller (worker route) re-enqueues
+// via QStash if more work is needed.
+
+export type OrchestratorState = {
+  messages: OrchestratorMessage[]
+  iteration: number
+  spendAccumulator: number
+  generatedAssets: { audioUrl?: string; imageUrl?: string }
+}
+
+export type StepResult =
+  | { done: false; iteration: number }
+  | { done: true; outcome: 'completed'; artifact: Artifact; spendTotal: number }
+  | { done: true; outcome: 'failed'; reason: string }
+
+export async function runOrchestratorStep(
+  job: Job,
+  expectedIteration?: number
+): Promise<StepResult> {
+  let state = await getOrchestratorState<OrchestratorState>(job.id)
+
+  if (!state) {
+    state = {
+      messages: [
+        { role: 'system', content: buildSystemPrompt(job) },
+        { role: 'user', content: job.goal },
+      ],
+      iteration: 0,
+      spendAccumulator: 0,
+      generatedAssets: {},
+    }
+  }
+
+  if (expectedIteration !== undefined && state.iteration !== expectedIteration) {
+    return { done: false, iteration: state.iteration }
+  }
+
+  if (state.iteration >= MAX_ITERATIONS) {
+    await appendStreamEvent(job.id, {
+      type: 'error',
+      payload: { message: 'Job took too many steps. Partial results may be available.' },
+    })
+    await deleteOrchestratorState(job.id)
+    return { done: true, outcome: 'failed', reason: 'Max iterations reached' }
+  }
+
+  const sapiomFetch = getSapiomFetch()
+
+  let response: Response | null = null
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      response = await sapiomFetch(OPENROUTER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: MODEL,
+          messages: state.messages,
+          tools: ORCHESTRATOR_TOOLS,
+          tool_choice: 'auto',
+          max_tokens: 4096,
+        }),
+      })
+    } catch (err) {
+      if (attempt === 2) {
+        await appendStreamEvent(job.id, {
+          type: 'error',
+          payload: { message: 'Failed to reach the AI model. Please try again.' },
+        })
+        await deleteOrchestratorState(job.id)
+        return { done: true, outcome: 'failed', reason: `Network error calling LLM: ${err}` }
+      }
+      await new Promise(r => setTimeout(r, 2000 * (attempt + 1)))
+      continue
+    }
+
+    if (response.ok) break
+
+    if (response.status >= 500 && attempt < 2) {
+      console.warn(`[step] LLM API ${response.status}, retrying (attempt ${attempt + 1})...`)
+      await new Promise(r => setTimeout(r, 2000 * (attempt + 1)))
+      continue
+    }
+
+    const body = await response.text().catch(() => '')
+    console.error(`[step] LLM API error ${response.status}: ${body.slice(0, 500)}`)
+    await appendStreamEvent(job.id, {
+      type: 'error',
+      payload: { message: `AI model error (${response.status}): ${body.slice(0, 200)}` },
+    })
+    await deleteOrchestratorState(job.id)
+    return { done: true, outcome: 'failed', reason: `LLM API error ${response.status}: ${body.slice(0, 500)}` }
+  }
+
+  if (!response || !response.ok) {
+    await appendStreamEvent(job.id, {
+      type: 'error',
+      payload: { message: 'AI model failed after retries.' },
+    })
+    await deleteOrchestratorState(job.id)
+    return { done: true, outcome: 'failed', reason: 'LLM call failed after retries' }
+  }
+
+  const completion = await response.json()
+  const message = completion.choices?.[0]?.message
+
+  if (!message) {
+    await appendStreamEvent(job.id, {
+      type: 'error',
+      payload: { message: 'Unexpected response from AI model.' },
+    })
+    await deleteOrchestratorState(job.id)
+    return { done: true, outcome: 'failed', reason: 'No message in LLM response' }
+  }
+
+  const assistantMsg: OrchestratorMessage = {
+    role: 'assistant',
+    content: message.content || (message.tool_calls?.length ? 'Calling tools.' : ''),
+  }
+  if (message.tool_calls?.length) {
+    assistantMsg.tool_calls = message.tool_calls
+  }
+  state.messages.push(assistantMsg)
+
+  const toolCalls = message.tool_calls
+  if (!toolCalls || toolCalls.length === 0) {
+    const fullContent = message.content ?? ''
+    let artifact = parseArtifact(fullContent)
+
+    if (!artifact) {
+      artifact = {
+        type: 'document',
+        title: job.goal.slice(0, 60),
+        content: fullContent,
+        summary: fullContent.slice(0, 200),
+      }
+    }
+
+    if (!artifact.content) {
+      const stripped = fullContent
+        .replace(/ARTIFACT_JSON[\s\S]*?END_ARTIFACT_JSON/g, '')
+        .replace(/ARTIFACT_JSON[\s\S]*/g, '')
+        .replace(/```json[\s\S]*?```/g, '')
+        .trim()
+      artifact.content = stripped || artifact.summary || ''
+    }
+
+    if (state.generatedAssets.audioUrl && !artifact.audioUrl) {
+      artifact.audioUrl = state.generatedAssets.audioUrl
+      if (artifact.type === 'document') artifact.type = 'mixed'
+    }
+    if (state.generatedAssets.imageUrl && !artifact.imageUrl) {
+      artifact.imageUrl = state.generatedAssets.imageUrl
+      if (artifact.type === 'document') artifact.type = 'mixed'
+    }
+
+    await setArtifact(job.id, artifact)
+    await appendStreamEvent(job.id, { type: 'artifact', payload: artifact })
+    await appendStreamEvent(job.id, {
+      type: 'complete',
+      payload: { jobId: job.id, total: state.spendAccumulator },
+    })
+    await deleteOrchestratorState(job.id)
+    return { done: true, outcome: 'completed', artifact, spendTotal: state.spendAccumulator }
+  }
+
+  for (const toolCall of toolCalls) {
+    const toolName = toolCall.function.name
+    let toolArgs: Record<string, unknown> = {}
+    try {
+      toolArgs = JSON.parse(toolCall.function.arguments ?? '{}')
+    } catch {
+      toolArgs = {}
+    }
+
+    const cost = estimateCost(toolName)
+    state.spendAccumulator += cost
+
+    const spendEvent: SpendEvent = {
+      jobId: job.id,
+      tool: toolName,
+      description: buildToolDescription(toolName, toolArgs),
+      cost,
+      timestamp: new Date().toISOString(),
+    }
+
+    await appendSpendEvent(spendEvent)
+    await addSpend(job.id, cost)
+    await appendStreamEvent(job.id, { type: 'tool_call', payload: spendEvent })
+
+    let toolResult: string
+    try {
+      const execResult = await executeTool(toolName, toolArgs)
+      toolResult = execResult.llmResponse
+      if (execResult.audioUrl) state.generatedAssets.audioUrl = execResult.audioUrl
+      if (execResult.imageUrl) state.generatedAssets.imageUrl = execResult.imageUrl
+    } catch (err) {
+      toolResult = JSON.stringify({ error: `Tool execution failed: ${err}` })
+    }
+
+    state.messages.push({
+      role: 'tool',
+      content: toolResult,
+      tool_call_id: toolCall.id,
+      name: toolName,
+    })
+
+    if (state.spendAccumulator >= job.budget * 0.9) {
+      state.messages.push({
+        role: 'user',
+        content: `Budget limit approaching ($${state.spendAccumulator.toFixed(3)} of $${job.budget.toFixed(2)} spent). Wrap up now and produce your final artifact with what you have.`,
+      })
+      break
+    }
+  }
+
+  state.iteration++
+  await setOrchestratorState(job.id, state)
+  return { done: false, iteration: state.iteration }
 }

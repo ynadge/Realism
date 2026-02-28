@@ -170,3 +170,37 @@ export async function setArtifact(jobId: string, artifact: Artifact): Promise<vo
 export async function getArtifact(jobId: string): Promise<Artifact | null> {
   return redisGet<Artifact>(keys.artifact(jobId))
 }
+
+// ─── Orchestrator State (background step execution) ──────────────────────────
+
+const ORCHESTRATOR_TTL = 60 * 60
+
+export async function setOrchestratorState(jobId: string, state: unknown): Promise<void> {
+  await redisSet(`orchestrator:${jobId}`, state, ORCHESTRATOR_TTL)
+}
+
+export async function getOrchestratorState<T>(jobId: string): Promise<T | null> {
+  return redisGet<T>(`orchestrator:${jobId}`)
+}
+
+export async function deleteOrchestratorState(jobId: string): Promise<void> {
+  await redisDel(`orchestrator:${jobId}`)
+}
+
+// ─── Stream Events (polling-based delivery) ──────────────────────────────────
+
+export async function appendStreamEvent(jobId: string, event: unknown): Promise<void> {
+  await redisRpush(`events:${jobId}`, JSON.stringify(event))
+  await redisExpire(`events:${jobId}`, JOB_TTL)
+}
+
+export async function getStreamEvents(jobId: string, fromIndex = 0): Promise<unknown[]> {
+  const raw = await redisLrange(`events:${jobId}`, fromIndex, -1)
+  return raw.map(item => {
+    try {
+      return typeof item === 'string' ? JSON.parse(item) : item
+    } catch {
+      return item
+    }
+  })
+}

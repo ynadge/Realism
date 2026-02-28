@@ -1,55 +1,39 @@
-import { NextRequest } from 'next/server'
-import { getJob } from '@/lib/jobs'
-import { runOrchestrator } from '@/lib/orchestrator'
+import { NextRequest, NextResponse } from 'next/server'
+import { getJob, startJob } from '@/lib/jobs'
 import { validateSession } from '@/lib/auth'
+import { sapiomPublishMessage } from '@/lib/sapiom'
 
 export async function POST(req: NextRequest) {
   const token = req.cookies.get('realism-session')?.value
-  if (!token) return new Response('Unauthorized', { status: 401 })
+  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const userId = await validateSession(token)
-  if (!userId) return new Response('Unauthorized', { status: 401 })
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   let body: { jobId?: string }
   try {
     body = await req.json()
   } catch {
-    return new Response('Invalid request body', { status: 400 })
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
 
   const { jobId } = body
-  if (!jobId) return new Response('jobId required', { status: 400 })
+  if (!jobId) return NextResponse.json({ error: 'jobId required' }, { status: 400 })
 
   const job = await getJob(jobId)
-  if (!job) return new Response('Job not found', { status: 404 })
-  if (job.userId !== userId) return new Response('Forbidden', { status: 403 })
-  if (job.status !== 'pending') return new Response('Job already started', { status: 409 })
+  if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+  if (job.userId !== userId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (job.status !== 'pending') return NextResponse.json({ error: 'Job already started' }, { status: 409 })
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      const encoder = new TextEncoder()
+  await startJob(jobId)
 
-      function send(event: object) {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
-      }
+  const workerUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/jobs/worker`
+  try {
+    await sapiomPublishMessage(workerUrl, { jobId, expectedIteration: 0 })
+  } catch (err) {
+    console.error(`[execute] Failed to enqueue job ${jobId}:`, err)
+    return NextResponse.json({ error: 'Failed to start job processing.' }, { status: 500 })
+  }
 
-      try {
-        for await (const event of runOrchestrator(job)) {
-          send(event)
-        }
-      } catch (err) {
-        send({ type: 'error', payload: { message: String(err) } })
-      } finally {
-        controller.close()
-      }
-    },
-  })
-
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-    },
-  })
+  return NextResponse.json({ ok: true, jobId })
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useState, useRef } from 'react'
+import { Suspense, useEffect, useState, useRef, useCallback } from 'react'
 import { useParams, useSearchParams, useRouter } from 'next/navigation'
 import { JobStream } from '@/components/JobStream'
 import { SpendMeter } from '@/components/SpendMeter'
@@ -9,6 +9,8 @@ import { Receipt } from '@/components/Receipt'
 import { SurfaceCard } from '@/components/ui/SurfaceCard'
 import { MonoLabel } from '@/components/ui/MonoLabel'
 import type { SpendEvent, Artifact, StreamEvent } from '@/types'
+
+const POLL_INTERVAL_MS = 2000
 
 function JobPageContent() {
   const router = useRouter()
@@ -21,46 +23,43 @@ function JobPageContent() {
   const [total, setTotal] = useState(0)
   const [notFound, setNotFound] = useState(false)
   const hasStarted = useRef(false)
+  const cancelledRef = useRef(false)
 
   const budget = parseFloat(searchParams.get('budget') ?? '2.00') || 2.0
+
+  const loadPersistedData = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/jobs/${id}`)
+      if (res.status === 404) {
+        setNotFound(true)
+        return
+      }
+      if (!res.ok) return
+      const data = await res.json()
+      if (data.spendEvents?.length) {
+        setEvents(data.spendEvents)
+        const sum = data.spendEvents.reduce((s: number, e: SpendEvent) => s + e.cost, 0)
+        setTotal(sum)
+      }
+      if (data.artifact) setArtifact(data.artifact)
+    } catch {
+      // Non-fatal
+    }
+  }, [id])
 
   useEffect(() => {
     if (hasStarted.current) return
     hasStarted.current = true
+    cancelledRef.current = false
 
-    async function loadPersistedData() {
-      try {
-        const res = await fetch(`/api/jobs/${id}`)
-        if (res.status === 404) {
-          setNotFound(true)
-          return
-        }
-        if (!res.ok) return
-        const data = await res.json()
-        if (data.spendEvents?.length) {
-          setEvents(data.spendEvents)
-          const sum = data.spendEvents.reduce((s: number, e: SpendEvent) => s + e.cost, 0)
-          setTotal(sum)
-        }
-        if (data.artifact) setArtifact(data.artifact)
-      } catch {
-        // Non-fatal — just can't load history
-      }
-    }
-
-    async function startJob() {
+    async function startAndPoll() {
       const res = await fetch('/api/jobs/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jobId: id }),
       })
 
-      if (!res.ok) {
-        if (res.status === 409) {
-          setIsLive(false)
-          await loadPersistedData()
-          return
-        }
+      if (!res.ok && res.status !== 409) {
         if (res.status === 404) {
           setNotFound(true)
           setIsLive(false)
@@ -71,28 +70,30 @@ function JobPageContent() {
         return
       }
 
-      const reader = res.body?.getReader()
-      if (!reader) return
+      if (res.status === 409) {
+        const job = await fetch(`/api/jobs/${id}`).then(r => r.json()).catch(() => null)
+        if (job?.job?.status === 'complete' || job?.job?.status === 'failed') {
+          await loadPersistedData()
+          setIsLive(false)
+          return
+        }
+      }
 
-      const decoder = new TextDecoder()
-      let buffer = ''
+      let nextIndex = 0
+      let settled = false
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
+      while (!settled && !cancelledRef.current) {
+        await new Promise(r => setTimeout(r, POLL_INTERVAL_MS))
+        if (cancelledRef.current) break
 
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
+        try {
+          const pollRes = await fetch(`/api/jobs/${id}/events?from=${nextIndex}`)
+          if (!pollRes.ok) continue
 
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          const raw = line.slice(6).trim()
-          if (!raw) continue
+          const data = await pollRes.json()
+          nextIndex = data.nextIndex
 
-          try {
-            const event = JSON.parse(raw) as StreamEvent
-
+          for (const event of data.events as StreamEvent[]) {
             switch (event.type) {
               case 'tool_call':
                 setEvents(prev => [...prev, event.payload])
@@ -102,25 +103,34 @@ function JobPageContent() {
                 setArtifact(event.payload)
                 break
               case 'complete':
-                setIsLive(false)
                 setTotal(event.payload.total)
+                settled = true
                 break
               case 'error':
                 setError(event.payload.message)
-                setIsLive(false)
+                settled = true
                 break
             }
-          } catch {
-            // Malformed SSE line — skip
           }
+
+          if (!settled && (data.status === 'complete' || data.status === 'failed')) {
+            await loadPersistedData()
+            settled = true
+          }
+        } catch {
+          // Network error — keep polling
         }
       }
 
       setIsLive(false)
     }
 
-    startJob()
-  }, [id])
+    startAndPoll()
+
+    return () => {
+      cancelledRef.current = true
+    }
+  }, [id, loadPersistedData])
 
   if (notFound) {
     return (
