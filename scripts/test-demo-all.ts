@@ -39,6 +39,9 @@ type StreamResult = {
   error: string | null
 }
 
+const POLL_INTERVAL = 3000
+const POLL_TIMEOUT = 180000
+
 async function executeJobStream(jobId: string, token: string): Promise<StreamResult> {
   const res = await fetch(`${BASE}/api/jobs/execute`, {
     method: 'POST',
@@ -54,26 +57,23 @@ async function executeJobStream(jobId: string, token: string): Promise<StreamRes
     return { events: [], artifact: null, totalCost: 0, error: `Execute ${res.status}: ${text}` }
   }
 
-  const reader = res.body?.getReader()
-  if (!reader) return { events: [], artifact: null, totalCost: 0, error: 'No stream' }
-
-  const decoder = new TextDecoder()
-  let buffer = ''
   const result: StreamResult = { events: [], artifact: null, totalCost: 0, error: null }
+  let nextIndex = 0
+  const deadline = Date.now() + POLL_TIMEOUT
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop() ?? ''
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, POLL_INTERVAL))
 
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue
-      const raw = line.slice(6).trim()
-      if (!raw) continue
-      try {
-        const event = JSON.parse(raw)
+    try {
+      const pollRes = await fetch(`${BASE}/api/jobs/${jobId}/events?from=${nextIndex}`, {
+        headers: { Cookie: `realism-session=${token}` },
+      })
+      if (!pollRes.ok) continue
+
+      const data = await pollRes.json()
+      nextIndex = data.nextIndex
+
+      for (const event of data.events) {
         switch (event.type) {
           case 'tool_call':
             result.events.push(event.payload)
@@ -85,15 +85,36 @@ async function executeJobStream(jobId: string, token: string): Promise<StreamRes
             break
           case 'complete':
             result.totalCost = event.payload.total
-            break
+            return result
           case 'error':
             result.error = event.payload.message
             console.error(`    ❌ ERROR: ${event.payload.message}`)
-            break
+            return result
         }
-      } catch { /* skip */ }
+      }
+
+      if (data.status === 'complete' || data.status === 'failed') {
+        if (data.events.length === 0) {
+          const jobRes = await fetch(`${BASE}/api/jobs/${jobId}`, {
+            headers: { Cookie: `realism-session=${token}` },
+          })
+          if (jobRes.ok) {
+            const jobData = await jobRes.json()
+            if (jobData.artifact) result.artifact = jobData.artifact
+            if (jobData.spendEvents?.length) {
+              for (const e of jobData.spendEvents) result.totalCost += e.cost
+            }
+            if (jobData.job?.status === 'failed') result.error = jobData.job.failureReason ?? 'Job failed'
+          }
+          return result
+        }
+      }
+    } catch {
+      // Network error — keep polling
     }
   }
+
+  result.error = 'Polling timed out after 3 minutes'
   return result
 }
 

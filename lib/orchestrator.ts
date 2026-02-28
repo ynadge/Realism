@@ -355,7 +355,7 @@ type OrchestratorMessage = {
 }
 
 const OPENROUTER_URL = 'https://openrouter.services.sapiom.ai/v1/chat/completions'
-const MODEL = 'anthropic/claude-3.5-sonnet'
+const MODEL = 'openai/gpt-4o'
 const MAX_ITERATIONS = 15
 
 export async function* runOrchestrator(
