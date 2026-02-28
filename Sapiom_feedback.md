@@ -121,6 +121,37 @@
 
 ---
 
+## Verification / Prelude
+
+### 11. Prelude returns undocumented `"blocked"` status — no SMS delivered, no error
+
+- **What happened:** Called `POST https://prelude.services.sapiom.ai/verifications` with a valid E.164 phone number. The API returned `200 OK` with:
+  ```json
+  {"id":"662f617f-e087-49bc-a742-f238c9f7f58f","status":"blocked"}
+  ```
+  No SMS was delivered. The `"blocked"` status is not documented anywhere.
+- **Expected behavior:** Either (a) the API returns a non-200 status code (e.g., 429 or 403) when delivery is blocked, so standard error handling catches it, or (b) `"blocked"` is listed as a possible `status` value in the response documentation.
+- **Actual behavior:** The API returns `200 OK` with a valid-looking verification ID and `"status":"blocked"`. Because the docs only document `"status":"pending"` for the send response, application code naturally treats any 200 response with an `id` as a successful send. The user sees "Code sent!" but never receives the SMS. Silent failure with no indication of the problem.
+- **Impact:** High — production auth flow silently broken. Users are told a code was sent when it wasn't. Only discoverable by logging the full response body and manually inspecting it.
+- **Workaround:** Added explicit check for `result.status === 'blocked'` and return a 429 to the client with a user-facing message.
+- **Suggestion:** (a) Document `"blocked"` as a possible status in the send verification response. (b) Return a 4xx status code instead of 200 when delivery is blocked — a 200 with a valid `id` strongly implies success. (c) Include a `reason` field (e.g., `"rate_limited"`, `"fraud_prevention"`, `"carrier_block"`) so the application can show an appropriate message.
+- **Doc source:** [Verify Users](https://docs.sapiom.ai/capabilities/verify/) — the Send Verification Code response section shows only `{ "id": "...", "status": "pending" }`. The only documented statuses are on the Check response: `success`, `pending`, `failure`. The Error Codes table lists 400, 402, 404, 410, 422, 429 — none of which cover a blocked delivery. The word "blocked" does not appear anywhere on the page. The "Provider" section mentions *"fraud prevention built in"* but gives no guidance on how fraud prevention manifests in the API response.
+
+### 12. Email verification documented but returns 502
+
+- **What happened:** Added email as an auth option alongside phone. Called `POST https://prelude.services.sapiom.ai/verifications` with `{ target: { type: "email_address", value: "user@example.com" } }` — the exact payload shown in the Verify Users capability page.
+- **Expected behavior:** A verification code is sent to the email address and a verification ID is returned, as documented.
+- **Actual behavior:** The proxy returns:
+  ```json
+  {"message":"Failed to create verification","error":"Bad Gateway","statusCode":502}
+  ```
+- **Impact:** High — email verification is completely non-functional through Sapiom. This blocks international adoption where phone verification is a barrier (no SMS coverage, user privacy concerns, etc.).
+- **Workaround:** Fall back to phone-only auth. Email UI toggle is built and ready but email delivery is broken server-side.
+- **Suggestion:** Either fix the Prelude proxy to forward email verification requests, or remove/caveat the email examples from the documentation until it works.
+- **Doc source:** [Verify Users](https://docs.sapiom.ai/capabilities/verify/) — this page **explicitly documents email as a supported verification method**. The API Reference table lists `target.type` as `"phone_number" or "email_address"`. A dedicated JSON example shows `{ "target": { "type": "email_address", "value": "user@example.com" } }`. The "How It Works" section states: *"Send a code — Call the /verifications endpoint with a phone number or email."* However, the separate API Reference page [Send verification code](https://docs.sapiom.ai/api-reference/endpoints/verification/v1-services-verify-send-post/) only documents `phoneNumber` in the request body with no mention of email or the `target` object — these two pages describe entirely different request schemas for the same operation. In practice, email verification returns a 502, meaning the capability page documents a feature that does not work.
+
+---
+
 ## Messaging / QStash
 
 ### 10. QStash schedules endpoint is undocumented

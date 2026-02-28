@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { MonoLabel } from '@/components/ui/MonoLabel'
 
 type AuthModalProps = {
@@ -37,7 +37,34 @@ export function AuthModal({ open, onSuccess, onClose }: AuthModalProps) {
   const [verificationId, setVerificationId] = useState('')
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
+  const [devBypass, setDevBypass] = useState(false)
+  const [devLoading, setDevLoading] = useState(false)
   const codeInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    fetch('/api/auth/dev-login')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => setDevBypass(!!data?.available))
+      .catch(() => setDevBypass(false))
+  }, [open])
+
+  async function handleDevLogin() {
+    setDevLoading(true)
+    setError('')
+    try {
+      const res = await fetch('/api/auth/dev-login', { method: 'POST' })
+      if (res.ok) {
+        onSuccess()
+      } else {
+        setError('Dev login failed.')
+      }
+    } catch {
+      setError('Network error.')
+    } finally {
+      setDevLoading(false)
+    }
+  }
 
   const resetToInput = useCallback(() => {
     setStep('input')
@@ -233,6 +260,19 @@ export function AuthModal({ open, onSuccess, onClose }: AuthModalProps) {
             >
               {method === 'phone' ? 'Use email instead' : 'Use phone instead'}
             </button>
+
+            {devBypass && (
+              <>
+                <div className="border-t border-border" />
+                <button
+                  onClick={handleDevLogin}
+                  disabled={devLoading}
+                  className="w-full py-2.5 border border-dashed border-border text-muted-foreground font-mono text-xs rounded-md transition-colors hover:border-accent-lime hover:text-foreground disabled:opacity-50"
+                >
+                  {devLoading ? 'Logging in...' : 'Dev login (skip OTP)'}
+                </button>
+              </>
+            )}
           </div>
         )}
 
