@@ -34,12 +34,17 @@ async function sapiomPost<T>(url: string, body: Record<string, unknown>): Promis
     body: JSON.stringify(body),
   })
 
+  const text = await res.text()
+
   if (!res.ok) {
-    const text = await res.text().catch(() => '(no body)')
     throw new SapiomError(res.status, `Sapiom API error ${res.status} at ${url}: ${text}`)
   }
 
-  return res.json() as Promise<T>
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    throw new SapiomError(res.status, `Sapiom non-JSON response at ${url}: ${text.slice(0, 200)}`)
+  }
 }
 
 async function sapiomGet<T>(url: string): Promise<T> {

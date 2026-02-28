@@ -25,6 +25,16 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await sapiomVerifySend(phone)
+    console.log('[auth/send] Sapiom response:', JSON.stringify(result))
+
+    if (!result.id) {
+      console.error('[auth/send] Sapiom returned no verification ID:', result)
+      return NextResponse.json(
+        { error: 'Verification service did not return an ID. Please try again.' },
+        { status: 502 }
+      )
+    }
+
     return NextResponse.json({ verificationId: result.id })
   } catch (err) {
     if (err instanceof SapiomError && err.status === 429) {
