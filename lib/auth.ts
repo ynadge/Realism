@@ -1,7 +1,16 @@
 import { SignJWT, jwtVerify } from 'jose'
 import { blockToken, isTokenBlocked } from '@/lib/upstash'
 
-const JWT_SECRET = new TextEncoder().encode(process.env.NEXTAUTH_SECRET!)
+function getJwtSecret(): Uint8Array {
+  const secret = process.env.NEXTAUTH_SECRET
+  if (!secret) {
+    throw new Error(
+      'NEXTAUTH_SECRET is not set. Add it to Vercel Environment Variables.'
+    )
+  }
+  return new TextEncoder().encode(secret)
+}
+
 const JWT_EXPIRY = '30d'
 const ALGORITHM = 'HS256'
 
@@ -27,7 +36,7 @@ export async function createSession(phone: string): Promise<string> {
     .setJti(jti)
     .setIssuedAt()
     .setExpirationTime(JWT_EXPIRY)
-    .sign(JWT_SECRET)
+    .sign(getJwtSecret())
 
   return token
 }
@@ -36,7 +45,7 @@ export async function validateSession(token: string): Promise<string | null> {
   if (!token) return null
 
   try {
-    const { payload } = await jwtVerify(token, JWT_SECRET)
+    const { payload } = await jwtVerify(token, getJwtSecret())
 
     if (payload.jti && await isTokenBlocked(payload.jti)) return null
 
@@ -48,7 +57,7 @@ export async function validateSession(token: string): Promise<string | null> {
 
 export async function destroySession(token: string): Promise<void> {
   try {
-    const { payload } = await jwtVerify(token, JWT_SECRET)
+    const { payload } = await jwtVerify(token, getJwtSecret())
     if (payload.jti) await blockToken(payload.jti)
   } catch {
     // Token already invalid
