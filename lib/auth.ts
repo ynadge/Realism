@@ -1,12 +1,14 @@
-import { setSession, getSession, deleteSession } from '@/lib/redis'
-import type { Session } from '@/types'
+import { SignJWT, jwtVerify } from 'jose'
+import { blockToken, isTokenBlocked } from '@/lib/upstash'
 
-// Web Crypto API — works in both Node.js and edge runtimes.
-// Avoids importing Node.js `crypto` module which breaks middleware edge runtime.
+const JWT_SECRET = new TextEncoder().encode(process.env.NEXTAUTH_SECRET!)
+const JWT_EXPIRY = '30d'
+const ALGORITHM = 'HS256'
 
+// Web Crypto API for hashing — required because this module is imported by
+// middleware.ts (edge runtime), which cannot load Node's crypto module.
 async function hashUserId(phone: string): Promise<string> {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(phone)
+  const data = new TextEncoder().encode(phone)
   const hashBuffer = await crypto.subtle.digest('SHA-256', data)
   const hashArray = Array.from(new Uint8Array(hashBuffer))
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
@@ -17,36 +19,38 @@ export async function getUserIdFromPhone(phone: string): Promise<string> {
 }
 
 export async function createSession(phone: string): Promise<string> {
-  const token = crypto.randomUUID()
   const userId = await getUserIdFromPhone(phone)
-  const now = new Date()
-  const expires = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+  const jti = crypto.randomUUID()
 
-  const session: Session = {
-    token,
-    userId,
-    createdAt: now.toISOString(),
-    expiresAt: expires.toISOString(),
-  }
+  const token = await new SignJWT({ userId, phone })
+    .setProtectedHeader({ alg: ALGORITHM })
+    .setJti(jti)
+    .setIssuedAt()
+    .setExpirationTime(JWT_EXPIRY)
+    .sign(JWT_SECRET)
 
-  await setSession(token, session)
   return token
 }
 
 export async function validateSession(token: string): Promise<string | null> {
   if (!token) return null
 
-  const session = await getSession(token)
-  if (!session) return null
+  try {
+    const { payload } = await jwtVerify(token, JWT_SECRET)
 
-  if (new Date(session.expiresAt) < new Date()) {
-    await deleteSession(token)
+    if (payload.jti && await isTokenBlocked(payload.jti)) return null
+
+    return payload.userId as string
+  } catch {
     return null
   }
-
-  return session.userId
 }
 
 export async function destroySession(token: string): Promise<void> {
-  await deleteSession(token)
+  try {
+    const { payload } = await jwtVerify(token, JWT_SECRET)
+    if (payload.jti) await blockToken(payload.jti)
+  } catch {
+    // Token already invalid
+  }
 }

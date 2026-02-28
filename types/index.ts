@@ -39,13 +39,6 @@ export type Job = {
   failureReason?: string
 }
 
-export type Session = {
-  token: string
-  userId: string
-  createdAt: string
-  expiresAt: string
-}
-
 export type StreamEvent =
   | { type: 'tool_call'; payload: SpendEvent }
   | { type: 'artifact'; payload: Artifact }

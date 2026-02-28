@@ -1,5 +1,5 @@
 import { createFetch } from '@sapiom/fetch'
-import type { Job, Session, SpendEvent, Artifact } from '@/types'
+import type { Job, SpendEvent, Artifact } from '@/types'
 
 // ─── Transport layer ──────────────────────────────────────────────────────────
 // Sapiom Redis is accessed via REST using the pipeline endpoint to avoid
@@ -93,7 +93,6 @@ async function redisExpire(key: string, seconds: number): Promise<void> {
 
 const keys = {
   job:         (id: string) =>     `job:${id}`,
-  session:     (token: string) =>  `session:${token}`,
   spendEvents: (jobId: string) =>  `spend:${jobId}`,
   artifact:    (jobId: string) =>  `artifact:${jobId}`,
   userJobs:    (userId: string) => `user:${userId}:jobs`,
@@ -125,22 +124,6 @@ export async function getUserJobs(userId: string): Promise<Job[]> {
   if (!jobIds.length) return []
   const jobs = await Promise.all(jobIds.map(id => getJob(id)))
   return jobs.filter(Boolean) as Job[]
-}
-
-// ─── Sessions ─────────────────────────────────────────────────────────────────
-
-const SESSION_TTL = 60 * 60 * 24 * 30 // 30 days
-
-export async function setSession(token: string, session: Session): Promise<void> {
-  await redisSet(keys.session(token), session, SESSION_TTL)
-}
-
-export async function getSession(token: string): Promise<Session | null> {
-  return redisGet<Session>(keys.session(token))
-}
-
-export async function deleteSession(token: string): Promise<void> {
-  await redisDel(keys.session(token))
 }
 
 // ─── Spend Events ─────────────────────────────────────────────────────────────

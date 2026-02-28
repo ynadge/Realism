@@ -10,8 +10,6 @@ import { SurfaceCard } from '@/components/ui/SurfaceCard'
 import { MonoLabel } from '@/components/ui/MonoLabel'
 import type { SpendEvent, Artifact, StreamEvent } from '@/types'
 
-const POLL_INTERVAL_MS = 2000
-
 function JobPageContent() {
   const router = useRouter()
   const { id } = useParams<{ id: string }>()
@@ -23,7 +21,6 @@ function JobPageContent() {
   const [total, setTotal] = useState(0)
   const [notFound, setNotFound] = useState(false)
   const hasStarted = useRef(false)
-  const cancelledRef = useRef(false)
 
   const budget = parseFloat(searchParams.get('budget') ?? '2.00') || 2.0
 
@@ -50,9 +47,11 @@ function JobPageContent() {
   useEffect(() => {
     if (hasStarted.current) return
     hasStarted.current = true
-    cancelledRef.current = false
 
-    async function startAndPoll() {
+    let es: EventSource | null = null
+
+    async function start() {
+      // Trigger execution (fire-and-forget — orchestrator runs in background)
       const res = await fetch('/api/jobs/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -70,65 +69,59 @@ function JobPageContent() {
         return
       }
 
+      // If 409, job already running or complete — SSE will still work for
+      // running jobs (events stream in), and for complete jobs the endpoint
+      // sends all stored events then closes.
       if (res.status === 409) {
-        const job = await fetch(`/api/jobs/${id}`).then(r => r.json()).catch(() => null)
-        if (job?.job?.status === 'complete' || job?.job?.status === 'failed') {
+        const jobRes = await fetch(`/api/jobs/${id}`).then(r => r.json()).catch(() => null)
+        if (jobRes?.job?.status === 'complete' || jobRes?.job?.status === 'failed') {
           await loadPersistedData()
           setIsLive(false)
           return
         }
       }
 
-      let nextIndex = 0
-      let settled = false
+      // Connect to SSE endpoint
+      es = new EventSource(`/api/jobs/${id}/events`)
 
-      while (!settled && !cancelledRef.current) {
-        await new Promise(r => setTimeout(r, POLL_INTERVAL_MS))
-        if (cancelledRef.current) break
-
+      es.onmessage = (e) => {
         try {
-          const pollRes = await fetch(`/api/jobs/${id}/events?from=${nextIndex}`)
-          if (!pollRes.ok) continue
+          const event = JSON.parse(e.data) as StreamEvent
 
-          const data = await pollRes.json()
-          nextIndex = data.nextIndex
-
-          for (const event of data.events as StreamEvent[]) {
-            switch (event.type) {
-              case 'tool_call':
-                setEvents(prev => [...prev, event.payload])
-                setTotal(prev => prev + event.payload.cost)
-                break
-              case 'artifact':
-                setArtifact(event.payload)
-                break
-              case 'complete':
-                setTotal(event.payload.total)
-                settled = true
-                break
-              case 'error':
-                setError(event.payload.message)
-                settled = true
-                break
-            }
-          }
-
-          if (!settled && (data.status === 'complete' || data.status === 'failed')) {
-            await loadPersistedData()
-            settled = true
+          switch (event.type) {
+            case 'tool_call':
+              setEvents(prev => [...prev, event.payload])
+              setTotal(prev => prev + event.payload.cost)
+              break
+            case 'artifact':
+              setArtifact(event.payload)
+              break
+            case 'complete':
+              setIsLive(false)
+              setTotal(event.payload.total)
+              es?.close()
+              break
+            case 'error':
+              setError(event.payload.message)
+              setIsLive(false)
+              es?.close()
+              break
           }
         } catch {
-          // Network error — keep polling
+          // Malformed event
         }
       }
 
-      setIsLive(false)
+      es.onerror = () => {
+        setIsLive(false)
+        es?.close()
+      }
     }
 
-    startAndPoll()
+    start()
 
     return () => {
-      cancelledRef.current = true
+      es?.close()
     }
   }, [id, loadPersistedData])
 

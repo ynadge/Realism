@@ -9,9 +9,11 @@
   },
   "dependencies": {
     "@sapiom/fetch": "^0.3.0",
+    "@upstash/redis": "^1.36.3",
     "ai": "^6.0.103",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "jose": "^6.1.3",
     "lucide-react": "^0.575.0",
     "next": "16.1.6",
     "radix-ui": "^1.4.3",

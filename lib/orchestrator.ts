@@ -13,10 +13,18 @@ import {
   setOrchestratorState,
   getOrchestratorState,
   deleteOrchestratorState,
-  appendStreamEvent,
+  appendStreamEvent as appendStreamEventSapiom,
 } from '@/lib/redis'
+import { appendStreamEvent as appendStreamEventUpstash } from '@/lib/upstash'
 import { completeJob, failJob, startJob, addSpend } from '@/lib/jobs'
 import type { Job, SpendEvent, Artifact, StreamEvent } from '@/types'
+
+async function appendStreamEvent(jobId: string, event: object): Promise<void> {
+  await Promise.all([
+    appendStreamEventSapiom(jobId, event),
+    appendStreamEventUpstash(jobId, event),
+  ])
+}
 
 // ─── Tool definitions (OpenAI function-calling format) ──────────────────────
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { validateSession } from '@/lib/auth'
 
-const PROTECTED_PREFIXES = ['/dashboard', '/job']
+const PROTECTED_PREFIXES = ['/dashboard', '/job', '/live']
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
@@ -18,26 +18,19 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL('/?auth=required', req.url))
   }
 
-  try {
-    const userId = await validateSession(token)
+  const userId = await validateSession(token)
 
-    if (!userId) {
-      const response = NextResponse.redirect(new URL('/?auth=required', req.url))
-      response.cookies.delete('realism-session')
-      return response
-    }
-
-    const response = NextResponse.next()
-    response.headers.set('x-user-id', userId)
-    return response
-  } catch (err) {
-    console.error('[middleware] Session validation error:', err)
+  if (!userId) {
     const response = NextResponse.redirect(new URL('/?auth=required', req.url))
     response.cookies.delete('realism-session')
     return response
   }
+
+  const response = NextResponse.next()
+  response.headers.set('x-user-id', userId)
+  return response
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/job/:path*'],
+  matcher: ['/dashboard/:path*', '/job/:path*', '/live/:path*'],
 }

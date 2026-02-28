@@ -5,6 +5,8 @@ import { sapiomPublishMessage } from '@/lib/sapiom'
 
 export const maxDuration = 60
 
+const isLocalDev = process.env.NEXT_PUBLIC_APP_URL?.includes('localhost')
+
 export async function POST(req: NextRequest) {
   let body: { jobId?: string; expectedIteration?: number }
   try {
@@ -42,13 +44,22 @@ export async function POST(req: NextRequest) {
   }
 
   const workerUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/jobs/worker`
-  try {
-    await sapiomPublishMessage(workerUrl, {
-      jobId,
-      expectedIteration: result.iteration,
-    })
-  } catch (err) {
-    console.error(`[worker] Failed to enqueue next step for ${jobId}:`, err)
+
+  if (isLocalDev) {
+    fetch(workerUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobId, expectedIteration: result.iteration }),
+    }).catch(err => console.error(`[worker] Local next-step call failed:`, err))
+  } else {
+    try {
+      await sapiomPublishMessage(workerUrl, {
+        jobId,
+        expectedIteration: result.iteration,
+      })
+    } catch (err) {
+      console.error(`[worker] Failed to enqueue next step for ${jobId}:`, err)
+    }
   }
 
   return NextResponse.json({ ok: true, done: false })
