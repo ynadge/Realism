@@ -7,4 +7,6 @@ export const sapiomAI = createOpenAI({
   fetch: getSapiomFetch(),
 })
 
-export const ORCHESTRATOR_MODEL = sapiomAI('anthropic/claude-3.5-sonnet')
+// Force chat completions endpoint (/v1/chat/completions) — Sapiom's /v1/responses
+// endpoint silently drops tool definitions, causing the model to skip all tool calls.
+export const ORCHESTRATOR_MODEL = sapiomAI.chat('anthropic/claude-3.5-sonnet')

@@ -47,17 +47,23 @@
 - **Suggestion:** Remove this validation. `content: null` on assistant messages with `tool_calls` is valid per the OpenAI chat completions spec and is standard behavior from Anthropic models.
 - **Doc source:** [AI Model Access](https://docs.sapiom.ai/capabilities/ai-models/) — this page states: *"The API is OpenAI-compatible"* and lists *"Function/tool calling (on supported models)"* as a supported feature. The "Common Issues" section only covers missing `max_tokens` and model naming. No proxy-specific validation rules are documented — in particular, no mention that the proxy rejects `content: null` on assistant messages, which is valid per the OpenAI spec and standard behavior from Anthropic models during tool-calling. The Error Codes table lists 400, 402, 404, 429 but does not describe what triggers a 400 in tool-calling scenarios.
 
-### 4. No guidance for Vercel AI SDK / third-party provider integration with x402
+### 4. (Suggestion) Third-party SDK integration pattern not documented
 
-- **What happened:** Used `@ai-sdk/openai` (Vercel AI SDK's OpenAI-compatible provider) pointed at `https://openrouter.services.sapiom.ai/v1` with the Sapiom API key as the Bearer token. The request was rejected with `402 Payment Required` containing an x402 payment challenge.
-- **Expected behavior:** Either the API key alone is sufficient (like standard OpenRouter), or the docs explain how to integrate x402 with third-party SDKs that accept a custom `fetch` function.
-- **Actual behavior:** The proxy returns a 402 with x402 payment negotiation headers. Only `@sapiom/fetch` or `@sapiom/axios` can handle this automatically. Any third-party SDK (Vercel AI SDK, LangChain's native HTTP, etc.) that doesn't use the Sapiom fetch wrapper will fail.
-- **Impact:** Medium — required reading the `@sapiom/fetch` source to understand it returns a standard `fetch`-compatible function, then injecting it as a custom `fetch` into `createOpenAI`. ~20 minutes to diagnose and fix.
-- **Workaround:** Pass `getSapiomFetch()` as the `fetch` option in `createOpenAI({ ..., fetch: getSapiomFetch() })`.
-- **Suggestion:** Add a "Third-party SDK integration" section to the AI Models page showing how to inject `@sapiom/fetch` into popular SDKs (Vercel AI SDK, OpenAI Node client, etc.). This is a common pattern — many developers won't use `@sapiom/axios` or `@sapiom/fetch` directly but will use framework-level AI providers.
-- **Doc source:** [AI Model Access](https://docs.sapiom.ai/capabilities/ai-models/) — all examples use `@sapiom/axios` or `@sapiom/fetch` directly. No mention of how to use the x402 payment layer with third-party SDKs. [For AI Tools](https://docs.sapiom.ai/for-agents/) — covers agent framework integrations (LangChain) but not Vercel AI SDK. [@sapiom/fetch](https://docs.sapiom.ai/reference/sdk/fetch/) — documents `createFetch` but doesn't mention that its return value can be passed as a custom `fetch` to other libraries.
+- **Note:** This is **not a bug** — x402 payment is Sapiom's core design and is well-documented. This is a documentation suggestion.
+- **What happened:** Used `@ai-sdk/openai` (Vercel AI SDK) pointed at Sapiom's OpenRouter endpoint. Got 402 because the SDK doesn't handle x402. Fix was straightforward: pass `createFetch()` as a custom `fetch` to `createOpenAI()`.
+- **Suggestion:** A short "Using with third-party SDKs" section on the [AI Model Access](https://docs.sapiom.ai/capabilities/ai-models/) page would help. Many developers use Vercel AI SDK, OpenAI's Node client, or similar — all of which accept a custom `fetch`. A one-liner example (`fetch: createFetch({ apiKey })`) would save time.
 
-### 5. Transient 500 errors with no retry guidance
+### 5. `/v1/responses` endpoint silently drops tool definitions — no error, truncated output
+
+- **What happened:** Sent a request with tool definitions to `POST https://openrouter.services.sapiom.ai/v1/responses` (the OpenAI Responses API endpoint). The proxy returned `200 OK` with a valid-looking but truncated text response. No tool calls were made. No error was raised. The model appeared to receive the prompt without any tools, generated a short incomplete response, and stopped.
+- **Expected behavior:** Either (a) the `/v1/responses` endpoint supports tool definitions the same way `/v1/chat/completions` does, or (b) the endpoint returns an error (e.g. 400 with `"tools not supported on this endpoint"`) so the caller knows to use a different endpoint.
+- **Actual behavior:** The request succeeds (200) but tools are silently ignored. The model generates a short text response without calling any tools. No indication in the response that something went wrong.
+- **Impact:** High — silent failure. The job completed with "success" status but produced no useful output. Spend showed $0.000 (no tool calls). Only diagnosable by noticing the output was suspiciously short and the spend was zero. ~30 minutes to diagnose.
+- **Workaround:** Switched from the Responses API to Chat Completions by using `sapiomAI.chat('anthropic/claude-3.5-sonnet')` instead of `sapiomAI('anthropic/claude-3.5-sonnet')` in the Vercel AI SDK provider. This forces requests to `/v1/chat/completions` where tools work correctly.
+- **Suggestion:** Either (a) add tool support to the `/v1/responses` endpoint, (b) return a clear error when tools are included in a Responses API request and they can't be processed, or (c) add a warning to the docs that tool calling is only supported on `/v1/chat/completions`.
+- **Doc source:** [AI Model Access](https://docs.sapiom.ai/capabilities/ai-models/) — the Chat Completions section explicitly lists `tools` as a supported request parameter: *"`tools` | array | No | Tool definitions for function calling"*. The "How It Works" section states: *"Function/tool calling (on supported models)"*. However, the OpenAI Responses section contains only two lines of documentation: *"Endpoint: `POST https://openrouter.services.sapiom.ai/v1/responses`"* and *"Use the OpenAI Responses API format. Accepts the same structure as the OpenAI Responses API."* — no request parameters, no examples, no mention of tool support or limitations. The claim that it *"accepts the same structure as the OpenAI Responses API"* implies full compatibility (including tools), but tools are silently dropped.
+
+### 6. Transient 500 errors with no retry guidance
 
 - **What happened:** The OpenRouter proxy returned `{"statusCode":500,"message":"Internal server error"}` during a DC4 test run, mid-orchestration.
 - **Expected behavior:** Either higher reliability, or standard retry guidance (`Retry-After` header, error code indicating transient vs permanent failure).
@@ -71,7 +77,7 @@
 
 ## Data / Redis
 
-### 6. Path-based Redis commands hit URL length limits with opaque errors
+### 7. Path-based Redis commands hit URL length limits with opaque errors
 
 - **What happened:** Redis commands were sent as path-encoded URLs (`POST /set/{key}/{urlEncodedValue}/EX/{ttl}`). When storing a job object with embedded artifact data, the URL-encoded value exceeded server URL length limits.
 - **Expected behavior:** Either a clear error message explaining the URL length issue, or the path-based API gracefully handling large values.
@@ -85,7 +91,7 @@
 - **Suggestion:** (a) Include the actual upstream error detail in the proxy response. (b) Add a specific error for URL-too-long conditions. (c) Consider recommending pipeline as the default approach in docs.
 - **Doc source:** [Data](https://docs.sapiom.ai/capabilities/data/) — the page's Quick Example and Complete Example both use path-based commands (`/set/my-key/my-value`, `/set/session:abc/active`). Pipeline IS documented in the "Redis Data Plane" section as a third code example, but is presented as a batching optimization, not as a solution for large values. No warning about URL length limits appears anywhere on the page. A developer following the primary examples will use path-based commands and only discover the size limitation at runtime with an opaque `upstream_400` error.
 
-### 7. Documentation emphasizes path-based commands over pipeline
+### 8. Documentation emphasizes path-based commands over pipeline
 
 - **What happened:** The Redis data capability docs primarily show path-based examples (`/set/key/value`). The pipeline endpoint (`POST /pipeline` with `[["SET","key","value"]]` body) is mentioned once in passing.
 - **Expected behavior:** For a data service meant to store structured application state (JSON objects, session data), the docs should lead with or at least equally emphasize the body-based pipeline approach.
@@ -94,7 +100,7 @@
 - **Suggestion:** Make pipeline the recommended approach in the quick start examples, or add a prominent warning about URL length limits on the path-based examples.
 - **Doc source:** [Data](https://docs.sapiom.ai/capabilities/data/) — pipeline IS documented on this page in the "Redis Data Plane" section (`POST ${db.url}/pipeline` with `[["set","key1","value1"],...]`), but it appears as the third of three code examples, positioned as a way to batch multiple commands. The Quick Example, Complete Example, and the first two Redis Data Plane examples all use path-based commands. There is no note that pipeline is essential (not optional) when storing values larger than a few KB, and no warning about the URL encoding size limit on path-based commands.
 
-### 8. `@upstash/redis` client library is incompatible
+### 9. `@upstash/redis` client library is incompatible
 
 - **What happened:** Sapiom provides access to Upstash Redis, but the standard `@upstash/redis` npm package cannot be used because authentication goes through x402 (via `@sapiom/fetch`) rather than Upstash's native REST token.
 - **Expected behavior:** Either compatibility with the official Upstash client (perhaps by providing a compatible token), or a Sapiom-specific Redis client with typed methods.
@@ -107,7 +113,7 @@
 
 ## Governance / Spending Rules
 
-### 9. Governance API uses Bearer auth instead of x402
+### 10. Governance API uses Bearer auth instead of x402
 
 - **What happened:** Called `POST https://api.sapiom.ai/v1/spending-rules` through `@sapiom/fetch` (which handles x402). The request was rejected with `401 Unauthorized`.
 - **Expected behavior:** Consistent auth across all Sapiom endpoints, or clear documentation of the exception.
@@ -117,7 +123,7 @@
 - **Suggestion:** Either route governance through x402 for consistency, or document the auth difference prominently and provide a helper in the SDK.
 - **Doc source:** [Create a new rule](https://docs.sapiom.ai/api-reference/endpoints/rules/v1-spending-rules-post/) — this single page contains **three contradictory auth statements**: (1) the description says *"Supports both JWT and API key authentication"*, (2) the Authentication section says *"No authentication required"*, and (3) the curl example includes `-H "Authorization: Bearer YOUR_API_KEY"`. The error table also lists `401 Unauthorized`, confirming auth IS required. In practice, Bearer auth is required — the "No authentication required" label is incorrect. [How Sapiom Works](https://docs.sapiom.ai/how-it-works/) — describes x402 as the universal auth mechanism (*"The SDK wraps your HTTP client and attaches payment headers to every request"*), with no mention that the governance REST API at `api.sapiom.ai` uses Bearer auth instead. [API Introduction](https://docs.sapiom.ai/api-reference/introduction/) — correctly states *"All API endpoints are authenticated using Bearer tokens"* for the management API, but the distinction between the management API (`api.sapiom.ai`) and service proxies (`*.services.sapiom.ai`) is never made explicit.
 
-### 10. Spending rule schema has undocumented constraints
+### 11. Spending rule schema has undocumented constraints
 
 - **What happened:** After fixing auth, the spending rule creation still failed with 400 because:
   - `fieldType: 'agent'` is not a valid value (valid: `service, action, resource, qualifier, transaction_property, payment_property`)
@@ -131,9 +137,23 @@
 
 ---
 
+## Messaging / QStash
+
+### 12. QStash schedules endpoint is undocumented
+
+- **What happened:** Persistent jobs require creating a recurring cron schedule via QStash. The `sapiomScheduleJob` function needed to call `POST /v1/qstash/schedules/{destination}` with an `Upstash-Cron` header to create a schedule. This endpoint is part of the standard QStash API but is not listed in the Sapiom Messaging documentation.
+- **Expected behavior:** The Messaging capability page documents all available QStash operations, including schedules (create, list, delete).
+- **Actual behavior:** The page only documents three endpoints: `publish`, `enqueue`, and `batch`. Schedules work (the proxy forwards to QStash correctly) but are completely undocumented. Additionally, the Publish section's "Rules" note says *"Callback, cron, and flow-control headers are stripped before forwarding"* — which creates ambiguity about whether cron-based scheduling is supported at all.
+- **Impact:** Medium — required inferring the endpoint from the native QStash API docs and hoping the Sapiom proxy forwards it. The "cron headers are stripped" note actively discouraged the correct approach. ~30 minutes of analysis to determine the right path.
+- **Workaround:** Used the undocumented `POST /v1/qstash/schedules/{destination}` path with `Upstash-Cron` header — it works because the proxy maps all `/v1/qstash/*` paths to QStash.
+- **Suggestion:** (a) Add schedules (create, list, get, delete) to the Messaging capability page. (b) Clarify that "cron headers are stripped before forwarding" means stripped from the delivery to the destination (not from QStash processing). (c) Show a schedule example since recurring jobs are a primary QStash use case.
+- **Doc source:** [Messaging](https://docs.sapiom.ai/capabilities/messaging/) — the endpoint table lists only `publish/*destination`, `enqueue/:queueName/*destination`, and `batch`. No mention of `schedules/*destination` or `schedules/:scheduleId`. The Rules section under Publish states: *"Callback, cron, and flow-control headers are stripped before forwarding"* — this suggests cron headers are discarded, when in reality they're processed by QStash and only stripped from the forwarded delivery to the destination.
+
+---
+
 ## Verification / Prelude
 
-### 12. Prelude returns undocumented `"blocked"` status — no SMS delivered, no error
+### 13. Prelude returns undocumented `"blocked"` status — no SMS delivered, no error
 
 - **What happened:** Called `POST https://prelude.services.sapiom.ai/verifications` with a valid E.164 phone number. The API returned `200 OK` with:
   ```json
@@ -147,7 +167,7 @@
 - **Suggestion:** (a) Document `"blocked"` as a possible status in the send verification response. (b) Return a 4xx status code instead of 200 when delivery is blocked — a 200 with a valid `id` strongly implies success. (c) Include a `reason` field (e.g., `"rate_limited"`, `"fraud_prevention"`, `"carrier_block"`) so the application can show an appropriate message.
 - **Doc source:** [Verify Users](https://docs.sapiom.ai/capabilities/verify/) — the Send Verification Code response section shows only `{ "id": "...", "status": "pending" }`. The only documented statuses are on the Check response: `success`, `pending`, `failure`. The Error Codes table lists 400, 402, 404, 410, 422, 429 — none of which cover a blocked delivery. The word "blocked" does not appear anywhere on the page. The "Provider" section mentions *"fraud prevention built in"* but gives no guidance on how fraud prevention manifests in the API response.
 
-### 13. Email verification documented but returns 502
+### 14. Email verification documented but returns 502
 
 - **What happened:** Added email as an auth option alongside phone. Called `POST https://prelude.services.sapiom.ai/verifications` with `{ target: { type: "email_address", value: "user@example.com" } }` — the exact payload shown in the Verify Users capability page.
 - **Expected behavior:** A verification code is sent to the email address and a verification ID is returned, as documented.
@@ -164,7 +184,7 @@
 
 ## Messaging / QStash
 
-### 11. QStash schedules endpoint is undocumented
+### 12. QStash schedules endpoint is undocumented
 
 - **What happened:** Persistent jobs require creating a recurring cron schedule via QStash. The `sapiomScheduleJob` function needed to call `POST /v1/qstash/schedules/{destination}` with an `Upstash-Cron` header to create a schedule. This endpoint is part of the standard QStash API but is not listed in the Sapiom Messaging documentation.
 - **Expected behavior:** The Messaging capability page documents all available QStash operations, including schedules (create, list, delete).
