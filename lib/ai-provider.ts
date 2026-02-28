@@ -5,4 +5,4 @@ export const sapiomAI = createOpenAI({
   apiKey: process.env.SAPIOM_API_KEY!,
 })
 
-export const ORCHESTRATOR_MODEL = sapiomAI('anthropic/claude-3-5-sonnet')
+export const ORCHESTRATOR_MODEL = sapiomAI('anthropic/claude-3.5-sonnet')
