@@ -1,4 +1,4 @@
-import { streamText, tool, stepCountIs } from 'ai'
+import { generateText, tool, stepCountIs } from 'ai'
 import { z } from 'zod'
 import {
   sapiomSearch,
@@ -290,7 +290,7 @@ export async function runJob(job: Job): Promise<void> {
   const spendRef = { total: 0 }
 
   try {
-    const result = await streamText({
+    const result = await generateText({
       model: ORCHESTRATOR_MODEL,
       system: buildSystemPrompt(job),
       prompt: job.goal,
@@ -299,7 +299,9 @@ export async function runJob(job: Job): Promise<void> {
       maxOutputTokens: 4096,
     })
 
-    const finalText = await result.text
+    const finalText = result.text
+
+    console.log(`[orchestrator] Job ${job.id}: ${result.steps.length} steps, ${finalText.length} chars`)
 
     const artifact = parseArtifact(finalText) ?? buildFallbackArtifact(job, finalText)
 
