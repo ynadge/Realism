@@ -285,6 +285,7 @@ export async function runJob(job: Job): Promise<void> {
       tools: buildTools(job, spendRef),
       stopWhen: stepCountIs(15),
       maxOutputTokens: 4096,
+      maxRetries: 5,
     })
 
     const finalText = result.text

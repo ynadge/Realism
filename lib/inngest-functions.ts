@@ -49,7 +49,7 @@ export const executeWebhookJob = inngest.createFunction(
     await step.run('execute-scheduled-run', async () => {
       const job = await getJob(jobId)
       if (!job) throw new Error(`Job ${jobId} not found`)
-      if (job.status === 'paused' || job.status === 'complete') {
+      if (job.status === 'paused') {
         return { skipped: true }
       }
 
