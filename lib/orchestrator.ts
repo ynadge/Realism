@@ -325,7 +325,10 @@ export async function runJob(job: Job): Promise<void> {
     ])
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    console.error(`[orchestrator] Job ${job.id} failed:`, message)
+    const details = (err as Record<string, unknown>)?.responseBody
+      ?? (err as Record<string, unknown>)?.cause
+      ?? ''
+    console.error(`[orchestrator] Job ${job.id} failed:`, message, details)
     await failJob(job.id, message)
     await appendStreamEvent(job.id, {
       type: 'error',
