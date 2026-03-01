@@ -8,23 +8,11 @@ import {
   sapiomGenerateImage,
   sapiomTextToSpeech,
 } from '@/lib/sapiom'
-import {
-  appendSpendEvent,
-  setArtifact,
-  updateJob,
-  appendStreamEvent as appendStreamEventSapiom,
-} from '@/lib/redis'
-import { appendStreamEvent as appendStreamEventUpstash } from '@/lib/upstash'
+import { appendSpendEvent, setArtifact } from '@/lib/redis'
+import { appendStreamEvent } from '@/lib/upstash'
 import { startJob, completeJob, failJob, addSpend } from '@/lib/jobs'
 import { ORCHESTRATOR_MODEL } from '@/lib/ai-provider'
 import type { Job, SpendEvent, Artifact } from '@/types'
-
-async function appendStreamEvent(jobId: string, event: object): Promise<void> {
-  await Promise.all([
-    appendStreamEventSapiom(jobId, event),
-    appendStreamEventUpstash(jobId, event),
-  ])
-}
 
 // ─── Cost estimates ──────────────────────────────────────────────────────────
 
