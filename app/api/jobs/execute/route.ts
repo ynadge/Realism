@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getJob } from '@/lib/jobs'
 import { validateSession } from '@/lib/auth'
-import { sapiomPublishMessage } from '@/lib/sapiom'
-
-const isLocalDev = process.env.NEXT_PUBLIC_APP_URL?.includes('localhost')
+import { inngest } from '@/lib/inngest'
 
 export async function POST(req: NextRequest) {
   const token = req.cookies.get('realism-session')?.value
@@ -27,22 +25,10 @@ export async function POST(req: NextRequest) {
   if (job.userId !== userId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   if (job.status !== 'pending') return NextResponse.json({ error: 'Job already started' }, { status: 409 })
 
-  const workerUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/jobs/worker`
-
-  if (isLocalDev) {
-    fetch(workerUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jobId }),
-    }).catch(err => console.error(`[execute] Local worker call failed:`, err))
-  } else {
-    try {
-      await sapiomPublishMessage(workerUrl, { jobId })
-    } catch (err) {
-      console.error(`[execute] Failed to enqueue job ${jobId}:`, err)
-      return NextResponse.json({ error: 'Failed to start job processing.' }, { status: 500 })
-    }
-  }
+  await inngest.send({
+    name: 'job/execute',
+    data: { jobId },
+  })
 
   return NextResponse.json({ ok: true, jobId })
 }

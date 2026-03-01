@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { after } from 'next/server'
 import { getJob } from '@/lib/jobs'
 import { runJob } from '@/lib/orchestrator'
 
@@ -22,17 +21,17 @@ export async function POST(req: NextRequest) {
   if (!job) {
     return NextResponse.json({ ok: false, error: 'Job not found' })
   }
+  if (job.status === 'complete') {
+    return NextResponse.json({ ok: true, skipped: true })
+  }
   if (job.status !== 'pending' && job.status !== 'running') {
     return NextResponse.json({ ok: true, skipped: true })
   }
 
-  after(async () => {
-    try {
-      await runJob(job)
-    } catch (err) {
-      console.error(`[worker] Background job ${jobId} failed:`, err)
-    }
-  })
-
-  return NextResponse.json({ ok: true })
+  try {
+    await runJob(job)
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    return NextResponse.json({ ok: false, error: String(err) })
+  }
 }
