@@ -1,0 +1,78 @@
+# Realism — Current State
+
+Last updated: 2026-03-01
+
+## Stack (what's actually running)
+
+| Layer | Choice |
+|-------|--------|
+| Framework | Next.js 16 App Router |
+| Styling | Tailwind CSS v4 + shadcn/ui |
+| Auth tokens | JWT via `jose` — cryptographic validation, zero Redis per request |
+| Auth verification | Sapiom Verify (Prelude) — phone OTP only (email returns 502) |
+| Orchestrator | Claude via Sapiom OpenRouter — Vercel AI SDK `generateText` with tool calling |
+| Job queue | Inngest — background execution with 10-minute timeout, retries, visual traces |
+| All data storage | Direct Upstash Redis (`@upstash/redis`) — jobs, artifacts, spend events, session blocklist, SSE events |
+| Cron scheduling | QStash via Sapiom Messaging — persistent job schedules only |
+| Governance | Sapiom spending rules (best-effort — budget also enforced in orchestrator prompt) |
+
+## What's been built
+
+- **000 — Project Bootstrap:** Next.js scaffold, dependencies, types, folder structure. Deviated: ended up on Next.js 16 (ticket said 14).
+- **001 — Design System Primitives:** Atmosphere (noise + mesh), LiveDot, MonoLabel, SurfaceCard, fade-up animations.
+- **002 — Core Library Files:** `lib/sapiom.ts`, `lib/redis.ts`, `lib/auth.ts`, `lib/jobs.ts`, `lib/classifier.ts`. All typed wrappers.
+- **002.5 — Redis Provisioning + Transport Fix:** Switched redis.ts from `@upstash/redis` to Sapiom HTTP Redis via `@sapiom/axios`. Now superseded by R-C.
+- **003 — Auth API Routes:** `/api/auth/send`, `/api/auth/verify`, middleware protecting `/dashboard`, `/job/*`, `/live/*`.
+- **004 — Auth UI (AuthModal):** Phone + email OTP modal. Email toggle built but email delivery broken server-side (Sapiom 502).
+- **005 — Job Creation API:** `/api/jobs/create` with goal classification, spending rule creation, QStash scheduling for persistent jobs.
+- **006 — The Orchestrator:** Agentic tool-calling loop, system prompt, artifact parsing with JSON repair and three-level fallback.
+- **007 — Landing Page:** Goal input with budget slider, once/recurring toggle, example goals, auth check.
+- **008 — Live Job View:** JobStream (tool call feed), SpendMeter, ArtifactViewer (document/audio/image/mixed), Receipt.
+- **009 — Dashboard:** Running persistent jobs as cards, completed jobs as history list, pause/cancel actions.
+- **009.5 — Performance Foundation:** JWT auth (replaced Redis sessions), direct Upstash for hot-path (session blocklist + SSE events), restored SSE streaming.
+- **R-A — Orchestrator Rewrite:** Replaced hand-rolled agentic loop (~400 lines) with Vercel AI SDK `generateText` + tool definitions (~200 lines). Kept artifact parsing.
+- **R-B — Job Queue Rewrite (Inngest):** Replaced QStash worker dispatch with Inngest for on-demand execution. QStash stays for cron only. Added `lib/inngest.ts`, `lib/inngest-functions.ts`, `/api/inngest` route.
+- **R-C — Redis Consolidation:** Replaced Sapiom HTTP Redis with direct Upstash Redis for all data. Removed `@sapiom/axios`, `SAPIOM_REDIS_URL`. One Redis client for everything.
+
+## Key decisions made
+
+- **JWT over Redis sessions (009.5):** Session validation was 100–300ms per request via Sapiom HTTP Redis. JWT verification is <1ms with zero network calls. Logout uses a small Upstash blocklist.
+- **Direct Upstash over Sapiom Redis (R-C):** Sapiom's HTTP Redis added x402 negotiation overhead, URL-length limits, and pipeline workarounds. Direct Upstash uses native protocol — same underlying database, correct client.
+- **Inngest over QStash for execution (R-B):** QStash dispatch required a worker route that ran inside Vercel's 60-second timeout. Inngest runs jobs for up to 10 minutes with visual traces and retries. QStash still handles cron scheduling.
+- **`generateText` over `streamText` (R-A):** The orchestrator uses `generateText` because it runs in an Inngest background function, not in an SSE response handler. SSE streaming happens separately via Upstash polling.
+- **Spending rules are best-effort:** Sapiom's governance API has undocumented enum constraints. Rule creation is non-blocking; budget enforcement happens in the orchestrator's system prompt.
+- **Phone-only auth for now:** Email verification documented by Sapiom but returns 502. Phone OTP works. Email UI is built and ready.
+
+## Known issues
+
+- **Email verification broken:** Sapiom's Prelude proxy returns 502 for email verification requests despite documenting email as supported (Sapiom_feedback #14).
+- **Prelude "blocked" status:** Phone verification can return an undocumented `"blocked"` status with a 200 OK — silently fails to send SMS (Sapiom_feedback #13). Workaround: explicit status check, return 429 to client.
+- **Worker route not deleted:** `app/api/jobs/worker/route.ts` still exists despite Ticket R-B specifying its removal. Inngest replaced it — it's dead code.
+- **No data migration:** Jobs created before R-C (in Sapiom HTTP Redis) are not accessible from direct Upstash. Old test data is lost.
+- **`concurrently` missing from devDependencies:** The `dev:all` script uses it but it's not in package.json.
+
+## Active debt
+
+- **Two Upstash clients:** `lib/redis.ts` and `lib/upstash.ts` both create separate `@upstash/redis` instances pointing at the same database. Could be merged into one module.
+- **Dead worker route:** `app/api/jobs/worker/route.ts` should be deleted — Inngest handles all execution now.
+- **`@sapiom/fetch` still in dependencies:** Listed in package.json but unclear if any active code path uses it after R-C removed Sapiom Redis.
+- **Original tickets 010–011 not built:** Demo polish, error states, mobile responsive pass (010) and the Recipe Skill (011) from the original plan are pending.
+- **Push notifications not implemented:** Architecture doc specifies Web Push + PWA (VAPID, service worker, web-push npm) but none of it is built yet.
+- **Live apps module not built:** Architecture doc specifies `/live/[userId]/[slug]` with iframe shell, data API, connectors. Not started.
+- **Connectors module not built:** Architecture doc specifies Reddit, Spotify, RSS connectors. Not started.
+
+## What's next
+
+Tickets R-A through R-C (the reset series) are complete. The next step depends on priorities — either Demo Polish (original Ticket 010) to make the three demo scenarios bulletproof, or new feature work.
+
+## Environment
+
+```
+SAPIOM_API_KEY
+UPSTASH_REDIS_URL
+UPSTASH_REDIS_TOKEN
+NEXTAUTH_SECRET
+NEXT_PUBLIC_APP_URL
+INNGEST_EVENT_KEY
+INNGEST_SIGNING_KEY
+```
