@@ -36,6 +36,7 @@ Last updated: 2026-03-02
 - **010 — Live Mode Foundation:** `types/live.ts` (all Live mode types), `lib/live-apps.ts` (CRUD for app configs, bundles, data plans, cache, connector credentials, slug generation). Push subscription functions added to `lib/redis.ts`. Re-export via `types/index.ts`. Redis key schema verified against live Upstash.
 - **011 — Connector System Foundation:** `connectors/types.ts` (interface — imports DataItem + ConnectorCredentials from `@/types`, no duplication), `connectors/reddit.ts` (3 methods: hot_posts, new_posts, search_posts), `connectors/rss.ts` (dependency-free regex XML parser for RSS 2.0 + Atom), `connectors/index.ts` (registry + helpers), `lib/connector-manager.ts` (runtime execution with credential loading and graceful error handling). Both connectors live-tested against real APIs.
 - **012 — Spotify Connector + OAuth:** `connectors/spotify.ts` (5 methods: top_tracks, recently_played, artist_info, new_releases, related_artists + token refresh), `/api/connectors/spotify/auth` (OAuth initiation), `/api/connectors/spotify/callback` (token exchange + credential storage), `/api/connectors/status` (connector status for all connectors). Registry now has 3 connectors.
+- **013 — Design Personality System:** `lib/design-personalities.ts` with 5 personalities (Terminal, Editorial, Tool, Brief, Clean), each with full design directives, color schemes, typography, layout, and motion specs. Keyword classifier maps goals to personalities. `lib/classifier.ts` extended with `classifyLiveGoal` returning design personality, suggested connectors, and personal context fields. Classification test: 5/5 first run.
 
 ## Key decisions made
 
@@ -62,7 +63,7 @@ Last updated: 2026-03-02
 
 ## What's next
 
-Next: Ticket 013 — Design personality system.
+Next: Ticket 014 — Creation orchestrator: plan + verify steps.
 
 ## Environment
 

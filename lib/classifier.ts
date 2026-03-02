@@ -1,5 +1,9 @@
 import { sapiomChat } from '@/lib/sapiom'
+import { classifyDesignPersonality } from '@/lib/design-personalities'
 import type { JobType } from '@/types'
+import type { DesignPersonalityId } from '@/types/live'
+
+// ─── Job mode classification ────────────────────────────────────────────────
 
 const PERSISTENT_KEYWORDS = [
   'monitor', 'watch', 'track', 'alert', 'notify',
@@ -41,5 +45,50 @@ export async function classifyGoal(goal: string): Promise<JobType> {
     return keywordClassify(goal)
   } catch {
     return keywordClassify(goal)
+  }
+}
+
+// ─── Live mode classification ───────────────────────────────────────────────
+
+export type LiveClassificationResult = {
+  designPersonality: DesignPersonalityId
+  suggestedConnectors: string[]
+  personalContextFields: string[]
+}
+
+export async function classifyLiveGoal(goal: string): Promise<LiveClassificationResult> {
+  const designPersonality = classifyDesignPersonality(goal)
+
+  const lower = goal.toLowerCase()
+  const suggestedConnectors: string[] = []
+
+  if (lower.includes('reddit') || lower.includes('community') || lower.includes('discussion')) {
+    suggestedConnectors.push('reddit')
+  }
+  if (lower.includes('spotify') || lower.includes('music') || lower.includes('listen') || lower.includes('artist')) {
+    suggestedConnectors.push('spotify')
+  }
+  if (lower.includes('rss') || lower.includes('blog') || lower.includes('podcast') || lower.includes('feed')) {
+    suggestedConnectors.push('rss')
+  }
+
+  const personalContextFields: string[] = []
+  if (lower.includes('measurement') || lower.includes('size') || lower.includes('fit')) {
+    if (lower.includes('chest') || lower.includes('waist') || lower.includes('inseam') || lower.includes('shoulder')) {
+      if (lower.includes('chest')) personalContextFields.push('chest')
+      if (lower.includes('waist')) personalContextFields.push('waist')
+      if (lower.includes('inseam')) personalContextFields.push('inseam')
+      if (lower.includes('shoulder')) personalContextFields.push('shoulder')
+      if (lower.includes('hip')) personalContextFields.push('hip')
+      if (lower.includes('neck')) personalContextFields.push('neck')
+    } else {
+      personalContextFields.push('chest', 'waist', 'inseam')
+    }
+  }
+
+  return {
+    designPersonality,
+    suggestedConnectors,
+    personalContextFields,
   }
 }
