@@ -6,7 +6,7 @@ Realism is a goal-execution interface built on top of [Sapiom](https://sapiom.ai
 
 ---
 
-[![Watch the demo](https://cdn.loom.com/sessions/thumbnails/bb6c51d1d8cc4e7db500ac6a51728aca-with-play.gif)](https://www.loom.com/share/bb6c51d1d8cc4e7db500ac6a51728aca)
+[![Watch the demo](https://cdn.loom.com/sessions/thumbnails/bb6c51d1d8cc4e7db500ac6a51728aca-f67f28baefead44f.gif)](https://www.loom.com/share/bb6c51d1d8cc4e7db500ac6a51728aca)
 
 ---
 
