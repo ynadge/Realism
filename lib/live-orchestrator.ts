@@ -407,7 +407,7 @@ export async function generateLiveApp(
 
 The app will run inside a sandboxed iframe. It:
 - Cannot access cookies, localStorage, or the parent window
-- Receives its data by calling fetch('/api/live/data/${plan.slug}') on load
+- Receives its data by calling fetch('/api/live/data/${plan.userId}/${plan.slug}') on load
 - Must work entirely with vanilla HTML, CSS, and JavaScript
 - Must use Tailwind CSS via CDN for styling
 
@@ -418,13 +418,13 @@ TECHNICAL REQUIREMENTS:
 - Include in <head>: <script src="https://cdn.tailwindcss.com"></script>
 - Include Google Fonts via <link> tag — choose fonts that match the design directive exactly
 - All JavaScript must be vanilla — no React, no Vue, no build step, no imports
-- On DOMContentLoaded: call fetch('/api/live/data/${plan.slug}') and render the JSON response
+- On DOMContentLoaded: call fetch('/api/live/data/${plan.userId}/${plan.slug}') and render the JSON response
 - Show a loading skeleton while data fetches — style it to match the design personality
 - Show a meaningful, styled error state if the fetch fails
 - Include a subtle refresh button — clicking it re-fetches and re-renders
 - The refresh button must be visually consistent with the overall design
 
-DATA SHAPE (what fetch('/api/live/data/${plan.slug}') returns):
+DATA SHAPE (what fetch('/api/live/data/${plan.userId}/${plan.slug}') returns):
 ${dataShape}
 
 JAVASCRIPT PATTERN TO FOLLOW:
@@ -432,7 +432,7 @@ JAVASCRIPT PATTERN TO FOLLOW:
 document.addEventListener('DOMContentLoaded', async () => {
   showLoading()
   try {
-    const res = await fetch('/api/live/data/${plan.slug}')
+    const res = await fetch('/api/live/data/${plan.userId}/${plan.slug}')
     if (!res.ok) throw new Error('Failed to fetch')
     const data = await res.json()
     renderApp(data)

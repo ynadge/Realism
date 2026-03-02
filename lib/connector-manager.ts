@@ -1,6 +1,6 @@
 import { getConnector, getAllConnectors } from '@/connectors'
 import { getConnectorCredentials } from '@/lib/live-apps'
-import type { DataItem } from '@/types'
+import type { DataItem, ConnectorCredentials } from '@/types'
 import type { DataFetch } from '@/types/live'
 
 export type ConnectorExecuteResult = {
@@ -10,7 +10,8 @@ export type ConnectorExecuteResult = {
 
 export async function executeConnectorFetch(
   dataFetch: DataFetch,
-  userId: string
+  userId: string,
+  preloadedCredentials?: ConnectorCredentials | null
 ): Promise<ConnectorExecuteResult> {
   if (dataFetch.type !== 'connector' || !dataFetch.connector || !dataFetch.method) {
     return { items: [], error: 'Invalid connector fetch config' }
@@ -26,8 +27,8 @@ export async function executeConnectorFetch(
     return { items: [], error: `Method "${dataFetch.method}" not found on connector "${dataFetch.connector}"` }
   }
 
-  let credentials = {}
-  if (connector.authType !== 'none') {
+  let credentials: ConnectorCredentials = preloadedCredentials ?? {}
+  if (connector.authType !== 'none' && !preloadedCredentials) {
     const stored = await getConnectorCredentials(userId, dataFetch.connector)
     if (!stored) {
       return {

@@ -39,6 +39,7 @@ Last updated: 2026-03-02
 - **013 — Design Personality System:** `lib/design-personalities.ts` with 5 personalities (Terminal, Editorial, Tool, Brief, Clean), each with full design directives, color schemes, typography, layout, and motion specs. Keyword classifier maps goals to personalities. `lib/classifier.ts` extended with `classifyLiveGoal` returning design personality, suggested connectors, and personal context fields. Classification test: 5/5 first run.
 - **014 — Creation Orchestrator: Plan + Verify:** `lib/live-orchestrator.ts` with `planLiveApp()` (LLM-powered DataPlan generation) and `verifyDataPlan()` (parallel fetch validation with fallback). Uses `sapiomSearch(q, 'deep')` not separate `sapiomDeepSearch`. Plan quality verified: targeted queries, appropriate cacheTTLs, descriptive fetch IDs, specific synthesis prompts. All 3 demo goals produce valid plans. Verify step returns real data. Fallback handles nonsense goals gracefully.
 - **015 — Creation Orchestrator: Code Generation:** `generateLiveApp()` added to `lib/live-orchestrator.ts` — produces complete HTML bundles with Tailwind CDN, Google Fonts, vanilla JS, loading/error states, refresh button. `createLiveApp()` orchestrates all 5 steps (classify → plan → verify → generate → store). `createLiveAppFunction` Inngest function with Redis-based status polling. `/api/live/create` route (dispatches to Inngest) and `/api/live/status/[eventId]` route (polls result). Bitcoin demo: 5,054 char Terminal-styled HTML — black bg, green #00FF41 data, JetBrains Mono monospace, blinking cursor, dense grid panels. Design personality faithfully implemented. 64s creation time.
+- **016 — Live Data API:** `/api/live/data/[userId]/[slug]/route.ts` — the server-side data endpoint generated Live apps call on page load. URL path uses `[userId]/[slug]` (not just `[slug]`) for unambiguous plan resolution. `lib/live-data-executor.ts` handles parallel fetch execution (search, deep search, URL fetch, connectors) with `Promise.allSettled` for graceful partial failure. Synthesis via Claude for fetches with `synthesize: true`. Token refresh for Spotify credentials persisted back to Redis via `getRefreshedConnectorCredentials`. `connector-manager.ts` updated with optional `preloadedCredentials` parameter to avoid circular dependency. Redis caching respects plan's `cacheTTL`. CORS headers set for iframe access.
 
 ## Key decisions made
 
@@ -60,12 +61,12 @@ Last updated: 2026-03-02
 
 - **Five Upstash clients:** `lib/redis.ts`, `lib/upstash.ts`, `lib/live-apps.ts`, `lib/inngest-functions.ts`, and `app/api/live/status/[eventId]/route.ts` each create separate `@upstash/redis` instances. Should be consolidated into a shared singleton.
 - **Push notifications not implemented:** Architecture doc specifies Web Push + PWA (VAPID, service worker, web-push npm) but none of it is built yet. Push subscription Redis functions are ready in `lib/redis.ts`.
-- **Live apps: code generation complete.** Full creation flow works end-to-end (classify → plan → verify → generate → store). Data API (016) and UI (017–019) remain before apps are viewable in browser.
-- **All three v1 connectors built (Reddit, RSS, Spotify).** OAuth flow complete. Token refresh persistence deferred to Ticket 016 (data API). State parameter signing deferred to pre-launch.
+- **Live apps: data API complete.** Full creation flow works end-to-end (classify → plan → verify → generate → store → serve data). UI (017–019) remains before apps are viewable in browser.
+- **All three v1 connectors built (Reddit, RSS, Spotify).** OAuth flow complete. Token refresh persistence implemented in `lib/live-data-executor.ts`. State parameter signing deferred to pre-launch.
 
 ## What's next
 
-Next: Ticket 016 — `/api/live/data/[slug]` data API.
+Next: Ticket 017 — Live page iframe shell.
 
 ## Environment
 
