@@ -34,6 +34,7 @@ Last updated: 2026-03-02
 - **R-B — Job Queue Rewrite (Inngest):** Replaced QStash worker dispatch with Inngest for on-demand execution. QStash stays for cron only. Added `lib/inngest.ts`, `lib/inngest-functions.ts`, `/api/inngest` route.
 - **R-C — Redis Consolidation:** Replaced Sapiom HTTP Redis with direct Upstash Redis for all data. Removed `@sapiom/axios`, `SAPIOM_REDIS_URL`. One Redis client for everything.
 - **010 — Live Mode Foundation:** `types/live.ts` (all Live mode types), `lib/live-apps.ts` (CRUD for app configs, bundles, data plans, cache, connector credentials, slug generation). Push subscription functions added to `lib/redis.ts`. Re-export via `types/index.ts`. Redis key schema verified against live Upstash.
+- **011 — Connector System Foundation:** `connectors/types.ts` (interface — imports DataItem + ConnectorCredentials from `@/types`, no duplication), `connectors/reddit.ts` (3 methods: hot_posts, new_posts, search_posts), `connectors/rss.ts` (dependency-free regex XML parser for RSS 2.0 + Atom), `connectors/index.ts` (registry + helpers), `lib/connector-manager.ts` (runtime execution with credential loading and graceful error handling). Both connectors live-tested against real APIs.
 
 ## Key decisions made
 
@@ -56,11 +57,11 @@ Last updated: 2026-03-02
 - **Three Upstash clients:** `lib/redis.ts`, `lib/upstash.ts`, and `lib/live-apps.ts` each create separate `@upstash/redis` instances pointing at the same database. Should be consolidated into a shared singleton.
 - **Push notifications not implemented:** Architecture doc specifies Web Push + PWA (VAPID, service worker, web-push npm) but none of it is built yet. Push subscription Redis functions are ready in `lib/redis.ts`.
 - **Live apps: data layer only.** Types and Redis CRUD done (Ticket 010). No UI, no API routes, no orchestrator, no connectors yet.
-- **Connectors module not built:** Architecture doc specifies Reddit, Spotify, RSS connectors. Not started.
+- **Connectors: Reddit + RSS built (Ticket 011).** Spotify pending (Ticket 012).
 
 ## What's next
 
-Next: Ticket 011 — Connector system foundation (types + Reddit + RSS).
+Next: Ticket 012 — Spotify connector + OAuth flow.
 
 ## Environment
 
