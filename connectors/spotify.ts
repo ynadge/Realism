@@ -63,6 +63,10 @@ async function spotifyGet(
     throw new Error('Spotify token expired — user must reconnect')
   }
 
+  if (res.status === 403) {
+    return null
+  }
+
   if (!res.ok) {
     throw new Error(`Spotify API error: ${res.status} for ${path}`)
   }
@@ -131,15 +135,18 @@ async function getArtistInfo(
   const artist = searchData.artists.items[0]
   if (!artist) return []
 
+  const followers = artist.followers?.total ?? 0
+  const genres = artist.genres ?? []
+
   return [{
     title: artist.name,
-    summary: `${artist.followers.total.toLocaleString()} followers · ${artist.genres.slice(0, 3).join(', ')}`,
+    summary: `${followers.toLocaleString()} followers · ${genres.slice(0, 3).join(', ') || 'no genres listed'}`,
     url: artist.external_urls.spotify,
-    imageUrl: artist.images[0]?.url,
+    imageUrl: artist.images?.[0]?.url,
     metadata: {
-      followers: String(artist.followers.total),
-      popularity: String(artist.popularity),
-      genres: artist.genres.join(', '),
+      followers: String(followers),
+      popularity: String(artist.popularity ?? 0),
+      genres: genres.join(', '),
       spotify_id: artist.id,
     },
   }]
@@ -152,7 +159,9 @@ async function getNewReleases(
   const data = await spotifyGet(
     `/browse/new-releases?limit=${limit}`,
     credentials
-  ) as { albums: { items: SpotifyAlbum[] } }
+  ) as { albums: { items: SpotifyAlbum[] } } | null
+
+  if (!data) return []
 
   return data.albums.items.map(album => ({
     title: album.name,
@@ -184,19 +193,25 @@ async function getRelatedArtists(
   const relatedData = await spotifyGet(
     `/artists/${artist.id}/related-artists`,
     credentials
-  ) as { artists: SpotifyArtist[] }
+  ) as { artists: SpotifyArtist[] } | null
 
-  return relatedData.artists.slice(0, 10).map(a => ({
-    title: a.name,
-    summary: `${a.followers.total.toLocaleString()} followers · ${a.genres.slice(0, 2).join(', ')}`,
-    url: a.external_urls.spotify,
-    imageUrl: a.images[0]?.url,
-    metadata: {
-      followers: String(a.followers.total),
-      popularity: String(a.popularity),
-      genres: a.genres.join(', '),
-    },
-  }))
+  if (!relatedData) return []
+
+  return relatedData.artists.slice(0, 10).map(a => {
+    const f = a.followers?.total ?? 0
+    const g = a.genres ?? []
+    return {
+      title: a.name,
+      summary: `${f.toLocaleString()} followers · ${g.slice(0, 2).join(', ') || 'no genres listed'}`,
+      url: a.external_urls.spotify,
+      imageUrl: a.images?.[0]?.url,
+      metadata: {
+        followers: String(f),
+        popularity: String(a.popularity ?? 0),
+        genres: g.join(', '),
+      },
+    }
+  })
 }
 
 // ─── Spotify API types ────────────────────────────────────────────────────────
