@@ -1,10 +1,12 @@
 import { reddit } from './reddit'
 import { rss } from './rss'
+import { spotify } from './spotify'
 import type { Connector, ConnectorRegistry } from './types'
 
 export const connectors: ConnectorRegistry = {
   [reddit.id]: reddit,
   [rss.id]: rss,
+  [spotify.id]: spotify,
 }
 
 export function getAllConnectors(): Connector[] {
