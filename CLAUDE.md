@@ -47,15 +47,12 @@ Last updated: 2026-03-01
 
 - **Email verification broken:** Sapiom's Prelude proxy returns 502 for email verification requests despite documenting email as supported (Sapiom_feedback #14).
 - **Prelude "blocked" status:** Phone verification can return an undocumented `"blocked"` status with a 200 OK — silently fails to send SMS (Sapiom_feedback #13). Workaround: explicit status check, return 429 to client.
-- **Worker route not deleted:** `app/api/jobs/worker/route.ts` still exists despite Ticket R-B specifying its removal. Inngest replaced it — it's dead code.
 - **No data migration:** Jobs created before R-C (in Sapiom HTTP Redis) are not accessible from direct Upstash. Old test data is lost.
 - **`concurrently` missing from devDependencies:** The `dev:all` script uses it but it's not in package.json.
 
 ## Active debt
 
 - **Two Upstash clients:** `lib/redis.ts` and `lib/upstash.ts` both create separate `@upstash/redis` instances pointing at the same database. Could be merged into one module.
-- **Dead worker route:** `app/api/jobs/worker/route.ts` should be deleted — Inngest handles all execution now.
-- **`@sapiom/fetch` still in dependencies:** Listed in package.json but unclear if any active code path uses it after R-C removed Sapiom Redis.
 - **Original tickets 010–011 not built:** Demo polish, error states, mobile responsive pass (010) and the Recipe Skill (011) from the original plan are pending.
 - **Push notifications not implemented:** Architecture doc specifies Web Push + PWA (VAPID, service worker, web-push npm) but none of it is built yet.
 - **Live apps module not built:** Architecture doc specifies `/live/[userId]/[slug]` with iframe shell, data API, connectors. Not started.
@@ -63,7 +60,7 @@ Last updated: 2026-03-01
 
 ## What's next
 
-Tickets R-A through R-C (the reset series) are complete. The next step depends on priorities — either Demo Polish (original Ticket 010) to make the three demo scenarios bulletproof, or new feature work.
+Next: Ticket 010 — Live mode foundation. Types, Redis keys, lib/live-apps.ts, types/live.ts.
 
 ## Environment
 
