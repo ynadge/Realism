@@ -41,6 +41,7 @@ Last updated: 2026-03-02
 - **015 — Creation Orchestrator: Code Generation:** `generateLiveApp()` added to `lib/live-orchestrator.ts` — produces complete HTML bundles with Tailwind CDN, Google Fonts, vanilla JS, loading/error states, refresh button. `createLiveApp()` orchestrates all 5 steps (classify → plan → verify → generate → store). `createLiveAppFunction` Inngest function with Redis-based status polling. `/api/live/create` route (dispatches to Inngest) and `/api/live/status/[eventId]` route (polls result). Bitcoin demo: 5,054 char Terminal-styled HTML — black bg, green #00FF41 data, JetBrains Mono monospace, blinking cursor, dense grid panels. Design personality faithfully implemented. 64s creation time.
 - **016 — Live Data API:** `/api/live/data/[userId]/[slug]/route.ts` — the server-side data endpoint generated Live apps call on page load. URL path uses `[userId]/[slug]` (not just `[slug]`) for unambiguous plan resolution. `lib/live-data-executor.ts` handles parallel fetch execution (search, deep search, URL fetch, connectors) with `Promise.allSettled` for graceful partial failure. Synthesis via Claude for fetches with `synthesize: true`. Token refresh for Spotify credentials persisted back to Redis via `getRefreshedConnectorCredentials`. `connector-manager.ts` updated with optional `preloadedCredentials` parameter to avoid circular dependency. Redis caching respects plan's `cacheTTL`. CORS headers set for iframe access.
 - **017 — Live Page: Iframe Shell:** `app/live/[userId]/[slug]/page.tsx` (server component loads config + bundle from Redis), `components/LiveShell.tsx` (client component renders sandboxed iframe with `srcDoc={bundle}` — no manual escaping), `not-found.tsx` (styled 404), `loading.tsx` (pulse animation), `settings/page.tsx` (stub for Ticket 018). Middleware updated: `/live/*` routes are now publicly accessible (removed from `PROTECTED_PREFIXES` and `matcher`). `/dashboard` and `/job/*` remain auth-protected. First end-to-end visible Live app: Bitcoin Pulse Terminal-styled app renders real data in iframe, header hide/show works, settings stub accessible.
+- **018 — Settings Page + Regenerate:** Real settings page at `/live/[userId]/[slug]/settings` with server-side auth check (owner-only, redirects non-owners to app). `components/live/SettingsClient.tsx` shows app info, data sources, personal context editing, connector status (Spotify connect/connected), regenerate button, and delete with confirmation. Three new API routes: `GET+DELETE /api/live/[slug]` (config + app deletion), `PATCH /api/live/[slug]/context` (saves userContext + invalidates Redis cache), `POST /api/live/[slug]/regenerate` (synchronous — re-verifies data, regenerates HTML bundle via `generateLiveApp`, no Inngest). All routes have ownership verification. Context save proactively invalidates cache to prevent stale userContext in data responses.
 
 ## Key decisions made
 
@@ -50,7 +51,8 @@ Last updated: 2026-03-02
 - **`generateText` over `streamText` (R-A):** The orchestrator uses `generateText` because it runs in an Inngest background function, not in an SSE response handler. SSE streaming happens separately via Upstash polling.
 - **Spending rules are best-effort:** Sapiom's governance API has undocumented enum constraints. Rule creation is non-blocking; budget enforcement happens in the orchestrator's system prompt.
 - **Phone-only auth for now:** Email verification documented by Sapiom but returns 502. Phone OTP works. Email UI is built and ready.
-- **Live pages are public (017):** Middleware no longer protects `/live/*`. Generated apps are shareable by URL without authentication. Settings page will check auth in Ticket 018.
+- **Live pages are public (017):** Middleware no longer protects `/live/*`. Generated apps are shareable by URL without authentication. Settings page checks auth in its server component (owner-only access).
+- **Regenerate is synchronous (018):** Regeneration runs directly in the API route (~20s, one LLM call) — no Inngest. Within Vercel's 60s limit. Skips plan and verify steps to keep costs low (~$0.05 per regenerate).
 
 ## Known issues
 
@@ -63,12 +65,12 @@ Last updated: 2026-03-02
 
 - **Five Upstash clients:** `lib/redis.ts`, `lib/upstash.ts`, `lib/live-apps.ts`, `lib/inngest-functions.ts`, and `app/api/live/status/[eventId]/route.ts` each create separate `@upstash/redis` instances. Should be consolidated into a shared singleton.
 - **Push notifications not implemented:** Architecture doc specifies Web Push + PWA (VAPID, service worker, web-push npm) but none of it is built yet. Push subscription Redis functions are ready in `lib/redis.ts`.
-- **Live apps: viewable in browser.** Full pipeline works end-to-end (classify → plan → verify → generate → store → serve data → render in iframe). Remaining UI: settings (018), dashboard + landing page integration (019).
+- **Live apps: settings complete.** Full pipeline works end-to-end including settings, context editing, regeneration, and deletion. Remaining UI: dashboard + landing page integration (019).
 - **All three v1 connectors built (Reddit, RSS, Spotify).** OAuth flow complete. Token refresh persistence implemented in `lib/live-data-executor.ts`. State parameter signing deferred to pre-launch.
 
 ## What's next
 
-Next: Ticket 018 — Settings page + regenerate feature.
+Next: Ticket 019 — Dashboard + landing page integration.
 
 ## Environment
 

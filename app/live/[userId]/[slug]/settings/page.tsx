@@ -1,26 +1,59 @@
-import Link from 'next/link'
+import { redirect, notFound } from 'next/navigation'
+import { cookies } from 'next/headers'
+import { validateSession } from '@/lib/auth'
+import { getLiveApp, getDataPlan, getConnectorCredentials } from '@/lib/live-apps'
+import { getAllConnectors } from '@/connectors'
+import { SettingsClient } from '@/components/live/SettingsClient'
 
 type Props = {
   params: Promise<{ userId: string; slug: string }>
 }
 
-export default async function LiveSettingsStub({ params }: Props) {
+export default async function LiveSettingsPage({ params }: Props) {
   const { userId, slug } = await params
 
+  const cookieStore = await cookies()
+  const token = cookieStore.get('realism-session')?.value
+
+  if (!token) {
+    redirect(`/?auth=required&returnTo=/live/${userId}/${slug}/settings`)
+  }
+
+  const sessionUserId = await validateSession(token)
+  if (!sessionUserId || sessionUserId !== userId) {
+    redirect(`/live/${userId}/${slug}`)
+  }
+
+  const [config, plan] = await Promise.all([
+    getLiveApp(userId, slug),
+    getDataPlan(userId, slug),
+  ])
+
+  if (!config || !plan) {
+    notFound()
+  }
+
+  const allConnectors = getAllConnectors().filter(c => c.authType !== 'none')
+  const connectorStatuses = await Promise.all(
+    allConnectors.map(async connector => {
+      const creds = await getConnectorCredentials(userId, connector.id)
+      return {
+        id: connector.id,
+        name: connector.name,
+        icon: connector.icon,
+        connected: creds !== null,
+        authUrl: `/api/connectors/${connector.id}/auth?returnTo=/live/${userId}/${slug}/settings`,
+      }
+    })
+  )
+
   return (
-    <div className="min-h-screen bg-[#0A0A0A] flex flex-col items-center justify-center gap-6 px-4">
-      <div className="text-center space-y-3">
-        <h1 className="text-[#F5F5F5] text-xl font-medium">Settings</h1>
-        <p className="text-[#888888] text-sm">
-          Settings coming in Ticket 018.
-        </p>
-      </div>
-      <Link
-        href={`/live/${userId}/${slug}`}
-        className="text-[#E8FF47] text-sm font-mono hover:underline"
-      >
-        ← Back to app
-      </Link>
-    </div>
+    <SettingsClient
+      config={config}
+      plan={plan}
+      userId={userId}
+      slug={slug}
+      connectorStatuses={connectorStatuses}
+    />
   )
 }
