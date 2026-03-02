@@ -16,4 +16,10 @@ export type RealismEvents = {
       jobId: string
     }
   }
+  'live/create': {
+    data: {
+      goal: string
+      userId: string
+    }
+  }
 }

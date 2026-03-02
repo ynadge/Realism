@@ -1,10 +1,14 @@
 import { generateText } from 'ai'
 import { ORCHESTRATOR_MODEL } from '@/lib/ai-provider'
 import { classifyLiveGoal } from '@/lib/classifier'
-import { getPersonality } from '@/lib/design-personalities'
+import { buildDesignBrief, getPersonality } from '@/lib/design-personalities'
 import { getConnectorSummaryForUser } from '@/lib/connector-manager'
+import { generateUniqueSlug, setLiveApp, setLiveBundle, setDataPlan } from '@/lib/live-apps'
 import { sapiomSearch, sapiomFetchUrl } from '@/lib/sapiom'
-import type { DataPlan, DataFetch, DataAPIResponse, DataResult, LiveCreationInput } from '@/types/live'
+import type {
+  DataPlan, DataFetch, DataAPIResponse, DataResult,
+  LiveCreationInput, LiveCreationResult, DesignPersonalityId,
+} from '@/types/live'
 
 // ─── Step 1: PLAN ─────────────────────────────────────────────────────────────
 
@@ -375,4 +379,225 @@ function normalizeSearchResults(raw: unknown): NormalizedItem[] {
 
 function interpolate(template: string, context: Record<string, string>): string {
   return template.replace(/\{userContext\.(\w+)\}/g, (_, key) => context[key] ?? `{${key}}`)
+}
+
+// ─── Step 3: GENERATE ────────────────────────────────────────────────────────
+
+export async function generateLiveApp(
+  plan: DataPlan,
+  sampleData: DataAPIResponse,
+  designPersonalityId: DesignPersonalityId,
+): Promise<string> {
+  const designBrief = buildDesignBrief(designPersonalityId)
+  const dataShape = buildDataShape(plan, sampleData)
+
+  const sampleDataStr = JSON.stringify(
+    truncateSampleData(sampleData),
+    null,
+    2
+  )
+
+  const userContextStr = Object.keys(plan.userContext).length > 0
+    ? Object.entries(plan.userContext)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(', ')
+    : 'none'
+
+  const systemPrompt = `You are an expert frontend developer generating complete, self-contained HTML applications.
+
+The app will run inside a sandboxed iframe. It:
+- Cannot access cookies, localStorage, or the parent window
+- Receives its data by calling fetch('/api/live/data/${plan.slug}') on load
+- Must work entirely with vanilla HTML, CSS, and JavaScript
+- Must use Tailwind CSS via CDN for styling
+
+${designBrief}
+
+TECHNICAL REQUIREMENTS:
+- Start with <!DOCTYPE html> — output the complete HTML document and nothing else
+- Include in <head>: <script src="https://cdn.tailwindcss.com"></script>
+- Include Google Fonts via <link> tag — choose fonts that match the design directive exactly
+- All JavaScript must be vanilla — no React, no Vue, no build step, no imports
+- On DOMContentLoaded: call fetch('/api/live/data/${plan.slug}') and render the JSON response
+- Show a loading skeleton while data fetches — style it to match the design personality
+- Show a meaningful, styled error state if the fetch fails
+- Include a subtle refresh button — clicking it re-fetches and re-renders
+- The refresh button must be visually consistent with the overall design
+
+DATA SHAPE (what fetch('/api/live/data/${plan.slug}') returns):
+${dataShape}
+
+JAVASCRIPT PATTERN TO FOLLOW:
+\`\`\`javascript
+document.addEventListener('DOMContentLoaded', async () => {
+  showLoading()
+  try {
+    const res = await fetch('/api/live/data/${plan.slug}')
+    if (!res.ok) throw new Error('Failed to fetch')
+    const data = await res.json()
+    renderApp(data)
+  } catch (err) {
+    showError(err.message)
+  }
+})
+
+function renderApp(data) {
+  // data.title — string
+  // data.refreshedAt — ISO timestamp
+  // data.cached — boolean
+  // data.userContext — { key: value } personal context
+  // data.data — { fetchId: { items: [...], synthesized?: string } }
+  // Access individual fetches: data.data['${plan.fetches[0]?.id ?? 'primary-search'}']
+}
+\`\`\`
+
+OUTPUT RULES:
+- Return ONLY the complete HTML document
+- No explanation before or after
+- No markdown code fences
+- No comments explaining what you're doing
+- The first character of your response must be < (the start of <!DOCTYPE html>)`
+
+  const userPrompt = `GOAL: ${plan.title}
+USER CONTEXT: ${userContextStr}
+
+SAMPLE DATA (real data from the verification step — design the UI around this actual content):
+${sampleDataStr}
+
+Generate the complete HTML application.`
+
+  const { text } = await generateText({
+    model: ORCHESTRATOR_MODEL,
+    system: systemPrompt,
+    prompt: userPrompt,
+    maxOutputTokens: 8192,
+  })
+
+  return stripMarkdownFences(text.trim())
+}
+
+// ─── Data shape builder ───────────────────────────────────────────────────────
+
+function buildDataShape(plan: DataPlan, sampleData: DataAPIResponse): string {
+  const lines: string[] = [
+    '{',
+    '  title: string,',
+    '  refreshedAt: string (ISO timestamp),',
+    '  cached: boolean,',
+    '  userContext: {',
+    ...Object.keys(plan.userContext).map(k => `    ${k}: string,`),
+    '  },',
+    '  data: {',
+  ]
+
+  for (const f of plan.fetches) {
+    const result = sampleData.data[f.id]
+    const itemCount = result?.items?.length ?? 0
+    const hasSynthesized = f.synthesize && result?.synthesized
+
+    lines.push(`    '${f.id}': {`)
+    lines.push(`      items: Array(${itemCount}) of {`)
+    lines.push('        title: string,')
+    lines.push('        summary?: string,')
+    lines.push('        url?: string,')
+    lines.push('        imageUrl?: string,')
+    lines.push('        publishedAt?: string,')
+    lines.push('        metadata?: Record<string, string>,')
+    lines.push('      },')
+    if (hasSynthesized) {
+      lines.push('      synthesized: string (AI summary of all items),')
+    }
+    lines.push('    },')
+  }
+
+  lines.push('  }')
+  lines.push('}')
+
+  return lines.join('\n')
+}
+
+// ─── Sample data truncation ───────────────────────────────────────────────────
+
+function truncateSampleData(sampleData: DataAPIResponse): Partial<DataAPIResponse> {
+  const truncated: Record<string, unknown> = {}
+
+  for (const [key, result] of Object.entries(sampleData.data)) {
+    truncated[key] = {
+      items: result.items.slice(0, 3).map(item => ({
+        title: item.title,
+        summary: item.summary?.slice(0, 200),
+        url: item.url,
+        publishedAt: item.publishedAt,
+        metadata: item.metadata,
+      })),
+      synthesized: result.synthesized?.slice(0, 500),
+    }
+  }
+
+  return {
+    title: sampleData.title,
+    data: truncated as DataAPIResponse['data'],
+    userContext: sampleData.userContext,
+  }
+}
+
+function stripMarkdownFences(html: string): string {
+  let cleaned = html
+    .replace(/^```html\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim()
+
+  // Strip any preamble before the first <
+  const firstAngle = cleaned.indexOf('<')
+  if (firstAngle > 0) {
+    cleaned = cleaned.slice(firstAngle)
+  }
+
+  return cleaned
+}
+
+// ─── Full creation flow ───────────────────────────────────────────────────────
+
+export async function createLiveApp(input: LiveCreationInput): Promise<LiveCreationResult> {
+  const { goal, userId } = input
+
+  const classification = await classifyLiveGoal(goal)
+  const rawPlan = await planLiveApp(input)
+
+  const slug = await generateUniqueSlug(userId, rawPlan.slug || goal)
+  const plan = { ...rawPlan, slug, userId }
+
+  const { plan: verifiedPlan, sampleData } = await verifyDataPlan(plan)
+
+  const html = await generateLiveApp(
+    verifiedPlan,
+    sampleData,
+    classification.designPersonality
+  )
+
+  const now = new Date().toISOString()
+  const config = {
+    id: crypto.randomUUID(),
+    userId,
+    slug,
+    title: verifiedPlan.title,
+    description: verifiedPlan.description,
+    designPersonality: classification.designPersonality,
+    createdAt: now,
+    updatedAt: now,
+  }
+
+  await Promise.all([
+    setLiveApp(config),
+    setLiveBundle(userId, slug, html),
+    setDataPlan(verifiedPlan),
+  ])
+
+  return {
+    slug,
+    url: `/live/${userId}/${slug}`,
+    config,
+    plan: verifiedPlan,
+  }
 }
