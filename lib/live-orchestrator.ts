@@ -427,6 +427,14 @@ TECHNICAL REQUIREMENTS:
 DATA SHAPE (what fetch('/api/live/data/${plan.userId}/${plan.slug}') returns):
 ${dataShape}
 
+DEFENSIVE CODING (CRITICAL):
+- Each entry in data.data may have { items: [], error: "..." } if that data source failed
+- ALWAYS check if items exist and have length before accessing item properties
+- ALWAYS use optional chaining: item?.summary, item?.url, item?.title
+- ALWAYS provide fallback values: item?.summary || 'No description available'
+- If a data source has an error field, show a subtle "Data unavailable" message in that section instead of crashing
+- NEVER assume data.data['someId'] exists — use: const section = data.data['someId'] || { items: [] }
+
 JAVASCRIPT PATTERN TO FOLLOW:
 \`\`\`javascript
 document.addEventListener('DOMContentLoaded', async () => {
@@ -446,8 +454,15 @@ function renderApp(data) {
   // data.refreshedAt — ISO timestamp
   // data.cached — boolean
   // data.userContext — { key: value } personal context
-  // data.data — { fetchId: { items: [...], synthesized?: string } }
-  // Access individual fetches: data.data['${plan.fetches[0]?.id ?? 'primary-search'}']
+  // data.data — { fetchId: { items: [...], synthesized?: string, error?: string } }
+  // IMPORTANT: Always guard access — a fetch may return { items: [], error: "..." }
+  const section = data.data['${plan.fetches[0]?.id ?? 'primary-search'}'] || { items: [] }
+  if (section.error) { /* show graceful "data unavailable" message */ }
+  section.items.forEach(item => {
+    const title = item?.title || 'Untitled'
+    const summary = item?.summary || ''
+    // ... render safely
+  })
 }
 \`\`\`
 
