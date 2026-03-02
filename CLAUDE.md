@@ -1,6 +1,6 @@
 # Realism — Current State
 
-Last updated: 2026-03-01
+Last updated: 2026-03-02
 
 ## Stack (what's actually running)
 
@@ -33,6 +33,7 @@ Last updated: 2026-03-01
 - **R-A — Orchestrator Rewrite:** Replaced hand-rolled agentic loop (~400 lines) with Vercel AI SDK `generateText` + tool definitions (~200 lines). Kept artifact parsing.
 - **R-B — Job Queue Rewrite (Inngest):** Replaced QStash worker dispatch with Inngest for on-demand execution. QStash stays for cron only. Added `lib/inngest.ts`, `lib/inngest-functions.ts`, `/api/inngest` route.
 - **R-C — Redis Consolidation:** Replaced Sapiom HTTP Redis with direct Upstash Redis for all data. Removed `@sapiom/axios`, `SAPIOM_REDIS_URL`. One Redis client for everything.
+- **010 — Live Mode Foundation:** `types/live.ts` (all Live mode types), `lib/live-apps.ts` (CRUD for app configs, bundles, data plans, cache, connector credentials, slug generation). Push subscription functions added to `lib/redis.ts`. Re-export via `types/index.ts`. Redis key schema verified against live Upstash.
 
 ## Key decisions made
 
@@ -52,15 +53,14 @@ Last updated: 2026-03-01
 
 ## Active debt
 
-- **Two Upstash clients:** `lib/redis.ts` and `lib/upstash.ts` both create separate `@upstash/redis` instances pointing at the same database. Could be merged into one module.
-- **Original tickets 010–011 not built:** Demo polish, error states, mobile responsive pass (010) and the Recipe Skill (011) from the original plan are pending.
-- **Push notifications not implemented:** Architecture doc specifies Web Push + PWA (VAPID, service worker, web-push npm) but none of it is built yet.
-- **Live apps module not built:** Architecture doc specifies `/live/[userId]/[slug]` with iframe shell, data API, connectors. Not started.
+- **Three Upstash clients:** `lib/redis.ts`, `lib/upstash.ts`, and `lib/live-apps.ts` each create separate `@upstash/redis` instances pointing at the same database. Should be consolidated into a shared singleton.
+- **Push notifications not implemented:** Architecture doc specifies Web Push + PWA (VAPID, service worker, web-push npm) but none of it is built yet. Push subscription Redis functions are ready in `lib/redis.ts`.
+- **Live apps: data layer only.** Types and Redis CRUD done (Ticket 010). No UI, no API routes, no orchestrator, no connectors yet.
 - **Connectors module not built:** Architecture doc specifies Reddit, Spotify, RSS connectors. Not started.
 
 ## What's next
 
-Next: Ticket 010 — Live mode foundation. Types, Redis keys, lib/live-apps.ts, types/live.ts.
+Next: Ticket 011 — Connector system foundation (types + Reddit + RSS).
 
 ## Environment
 

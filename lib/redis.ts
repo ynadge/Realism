@@ -82,3 +82,22 @@ export async function setArtifact(jobId: string, artifact: Artifact): Promise<vo
 export async function getArtifact(jobId: string): Promise<Artifact | null> {
   return getRedis().get<Artifact>(keys.artifact(jobId))
 }
+
+// ─── Push Subscriptions ──────────────────────────────────────────────────────
+
+const PUSH_TTL = 60 * 60 * 24 * 365 // 1 year
+
+export async function setPushSubscription(
+  userId: string,
+  subscription: object
+): Promise<void> {
+  await getRedis().set(`push:${userId}`, subscription, { ex: PUSH_TTL })
+}
+
+export async function getPushSubscription(userId: string): Promise<object | null> {
+  return getRedis().get(`push:${userId}`)
+}
+
+export async function deletePushSubscription(userId: string): Promise<void> {
+  await getRedis().del(`push:${userId}`)
+}
