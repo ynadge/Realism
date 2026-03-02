@@ -37,6 +37,7 @@ Last updated: 2026-03-02
 - **011 — Connector System Foundation:** `connectors/types.ts` (interface — imports DataItem + ConnectorCredentials from `@/types`, no duplication), `connectors/reddit.ts` (3 methods: hot_posts, new_posts, search_posts), `connectors/rss.ts` (dependency-free regex XML parser for RSS 2.0 + Atom), `connectors/index.ts` (registry + helpers), `lib/connector-manager.ts` (runtime execution with credential loading and graceful error handling). Both connectors live-tested against real APIs.
 - **012 — Spotify Connector + OAuth:** `connectors/spotify.ts` (5 methods: top_tracks, recently_played, artist_info, new_releases, related_artists + token refresh), `/api/connectors/spotify/auth` (OAuth initiation), `/api/connectors/spotify/callback` (token exchange + credential storage), `/api/connectors/status` (connector status for all connectors). Registry now has 3 connectors.
 - **013 — Design Personality System:** `lib/design-personalities.ts` with 5 personalities (Terminal, Editorial, Tool, Brief, Clean), each with full design directives, color schemes, typography, layout, and motion specs. Keyword classifier maps goals to personalities. `lib/classifier.ts` extended with `classifyLiveGoal` returning design personality, suggested connectors, and personal context fields. Classification test: 5/5 first run.
+- **014 — Creation Orchestrator: Plan + Verify:** `lib/live-orchestrator.ts` with `planLiveApp()` (LLM-powered DataPlan generation) and `verifyDataPlan()` (parallel fetch validation with fallback). Uses `sapiomSearch(q, 'deep')` not separate `sapiomDeepSearch`. Plan quality verified: targeted queries, appropriate cacheTTLs, descriptive fetch IDs, specific synthesis prompts. All 3 demo goals produce valid plans. Verify step returns real data. Fallback handles nonsense goals gracefully.
 
 ## Key decisions made
 
@@ -58,12 +59,12 @@ Last updated: 2026-03-02
 
 - **Three Upstash clients:** `lib/redis.ts`, `lib/upstash.ts`, and `lib/live-apps.ts` each create separate `@upstash/redis` instances pointing at the same database. Should be consolidated into a shared singleton.
 - **Push notifications not implemented:** Architecture doc specifies Web Push + PWA (VAPID, service worker, web-push npm) but none of it is built yet. Push subscription Redis functions are ready in `lib/redis.ts`.
-- **Live apps: data layer only.** Types and Redis CRUD done (Ticket 010). No UI, no API routes, no orchestrator, no connectors yet.
+- **Live apps: plan + verify built, no code gen or UI yet.** Types, Redis CRUD (010), connectors (011–012), design personalities (013), plan + verify orchestrator (014) done. Code generation (015), data API (016), and UI (017–019) remain.
 - **All three v1 connectors built (Reddit, RSS, Spotify).** OAuth flow complete. Token refresh persistence deferred to Ticket 016 (data API). State parameter signing deferred to pre-launch.
 
 ## What's next
 
-Next: Ticket 014 — Creation orchestrator: plan + verify steps.
+Next: Ticket 015 — Creation orchestrator: code generation step.
 
 ## Environment
 
