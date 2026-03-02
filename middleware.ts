@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { validateSession } from '@/lib/auth'
 
-const PROTECTED_PREFIXES = ['/dashboard', '/job', '/live']
+const PROTECTED_PREFIXES = ['/dashboard', '/job']
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
@@ -32,5 +32,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/job/:path*', '/live/:path*'],
+  matcher: ['/dashboard/:path*', '/job/:path*'],
 }
