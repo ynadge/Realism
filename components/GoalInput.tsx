@@ -9,22 +9,40 @@ export type GoalInputHandle = {
   submit: () => void
 }
 
+type GoalMode = 'once' | 'recurring' | 'live'
+
 type GoalInputProps = {
   onAuthRequired: () => void
+  onLiveCreationStart?: (eventId: string) => void
 }
 
-const EXAMPLE_GOALS = [
-  'Research the state of AI agent payments and produce a briefing with audio',
-  'Generate a brand concept and cover image for a fintech startup',
-  'Monitor Hacker News weekly for posts about agentic infrastructure',
-]
+const EXAMPLE_GOALS: Record<GoalMode, string[]> = {
+  once: [
+    'Research the state of AI agent payments and produce a briefing with audio',
+    'Generate a brand concept and cover image for a fintech startup',
+  ],
+  recurring: [
+    'Monitor Hacker News weekly for posts about agentic infrastructure',
+  ],
+  live: [
+    'I want a feed of everything important happening with Bitcoin right now',
+    'My chest is 38in, waist 32in — I never know what size to buy for formal wear',
+    "I'm into Mk.gee, Men I Trust, and Arca — make me a page about them",
+  ],
+}
+
+const MODE_LABELS: Record<GoalMode, string> = {
+  once: 'Once',
+  recurring: 'Scheduled',
+  live: 'Live',
+}
 
 export const GoalInput = forwardRef<GoalInputHandle, GoalInputProps>(
-  function GoalInput({ onAuthRequired }, ref) {
+  function GoalInput({ onAuthRequired, onLiveCreationStart }, ref) {
     const router = useRouter()
     const [goal, setGoal] = useState('')
     const [budget, setBudget] = useState(2.0)
-    const [type, setType] = useState<'once' | 'recurring'>('once')
+    const [mode, setMode] = useState<GoalMode>('once')
     const [cadence, setCadence] = useState<'daily' | 'weekly'>('weekly')
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [error, setError] = useState('')
@@ -36,13 +54,35 @@ export const GoalInput = forwardRef<GoalInputHandle, GoalInputProps>(
       setIsSubmitting(true)
 
       try {
+        if (mode === 'live') {
+          const res = await fetch('/api/live/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ goal: goal.trim() }),
+          })
+
+          if (res.status === 401) {
+            onAuthRequired()
+            return
+          }
+
+          const data = await res.json()
+          if (!res.ok) {
+            setError(data.error ?? 'Something went wrong. Try again.')
+            return
+          }
+
+          onLiveCreationStart?.(data.eventId)
+          return
+        }
+
         const res = await fetch('/api/jobs/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             goal: goal.trim(),
             budget,
-            cadence: type === 'recurring' ? cadence : undefined,
+            cadence: mode === 'recurring' ? cadence : undefined,
           }),
         })
 
@@ -55,7 +95,7 @@ export const GoalInput = forwardRef<GoalInputHandle, GoalInputProps>(
 
         if (data.needsCadence) {
           setNeedsCadence(true)
-          setType('recurring')
+          setMode('recurring')
           return
         }
 
@@ -70,7 +110,7 @@ export const GoalInput = forwardRef<GoalInputHandle, GoalInputProps>(
       } finally {
         setIsSubmitting(false)
       }
-    }, [goal, budget, type, cadence, isSubmitting, onAuthRequired, router])
+    }, [goal, budget, mode, cadence, isSubmitting, onAuthRequired, onLiveCreationStart, router])
 
     useImperativeHandle(ref, () => ({ submit: handleSubmit }), [handleSubmit])
 
@@ -78,33 +118,33 @@ export const GoalInput = forwardRef<GoalInputHandle, GoalInputProps>(
       setGoal(example)
       setError('')
       setNeedsCadence(false)
-      if (/monitor|weekly|daily/i.test(example)) {
-        setType('recurring')
-      }
     }
 
-    function handleTypeChange(newType: 'once' | 'recurring') {
-      setType(newType)
-      if (newType === 'recurring') {
-        setNeedsCadence(false)
-      }
+    function handleModeChange(newMode: GoalMode) {
+      setMode(newMode)
+      setNeedsCadence(false)
     }
+
+    const currentExamples = EXAMPLE_GOALS[mode]
 
     const buttonText = needsCadence
       ? 'Choose a schedule \u2192'
       : isSubmitting
         ? 'Working...'
-        : 'Make it real \u2192'
+        : mode === 'live'
+          ? 'Make it real \u2192'
+          : mode === 'recurring'
+            ? 'Schedule it \u2192'
+            : 'Run once \u2192'
 
     return (
       <div className="flex flex-col gap-5">
 
-        {/* Textarea */}
         <div className="relative">
           <textarea
             value={goal}
             onChange={e => { setGoal(e.target.value); setError(''); setNeedsCadence(false) }}
-            placeholder="Describe what you want to be true..."
+            placeholder={mode === 'live' ? 'Describe the app you want...' : 'Describe what you want to be true...'}
             rows={4}
             maxLength={500}
             disabled={isSubmitting}
@@ -117,52 +157,45 @@ export const GoalInput = forwardRef<GoalInputHandle, GoalInputProps>(
           )}
         </div>
 
-        {/* Budget */}
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground text-xs font-ui">Budget</span>
-            <MonoLabel variant="accent">${budget.toFixed(2)}</MonoLabel>
+        <div className={`overflow-hidden transition-all duration-200 ease-out ${
+          mode !== 'live' ? 'max-h-24 opacity-100' : 'max-h-0 opacity-0'
+        }`}>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground text-xs font-ui">Budget</span>
+              <MonoLabel variant="accent">${budget.toFixed(2)}</MonoLabel>
+            </div>
+            <Slider
+              min={0.25}
+              max={10}
+              step={0.25}
+              value={[budget]}
+              onValueChange={([v]) => setBudget(v)}
+              className="w-full"
+            />
           </div>
-          <Slider
-            min={0.25}
-            max={10}
-            step={0.25}
-            value={[budget]}
-            onValueChange={([v]) => setBudget(v)}
-            className="w-full"
-          />
         </div>
 
-        {/* Type toggle */}
         <div className="flex gap-2">
-          <button
-            onClick={() => handleTypeChange('once')}
-            disabled={isSubmitting}
-            className={`flex-1 py-2 rounded-md text-sm font-mono transition-colors ${
-              type === 'once'
-                ? 'bg-surface border border-accent-lime text-foreground'
-                : 'border border-border text-muted-foreground hover:text-foreground'
-            } disabled:opacity-50`}
-          >
-            Once
-          </button>
-          <button
-            onClick={() => handleTypeChange('recurring')}
-            disabled={isSubmitting}
-            className={`flex-1 py-2 rounded-md text-sm font-mono transition-colors ${
-              type === 'recurring'
-                ? 'bg-surface border border-accent-lime text-foreground'
-                : 'border border-border text-muted-foreground hover:text-foreground'
-            } disabled:opacity-50`}
-          >
-            Recurring
-          </button>
+          {(['once', 'recurring', 'live'] as const).map(m => (
+            <button
+              key={m}
+              onClick={() => handleModeChange(m)}
+              disabled={isSubmitting}
+              className={`flex-1 py-2 rounded-md text-sm font-mono transition-colors ${
+                mode === m
+                  ? 'bg-surface border border-accent-lime text-foreground'
+                  : 'border border-border text-muted-foreground hover:text-foreground'
+              } disabled:opacity-50`}
+            >
+              {MODE_LABELS[m]}
+            </button>
+          ))}
         </div>
 
-        {/* Cadence selector — slides in when recurring */}
         <div
           className={`overflow-hidden transition-all duration-200 ease-out ${
-            type === 'recurring' ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0'
+            mode === 'recurring' ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0'
           }`}
         >
           <div className="flex gap-2">
@@ -191,9 +224,8 @@ export const GoalInput = forwardRef<GoalInputHandle, GoalInputProps>(
           </div>
         </div>
 
-        {/* Example goals */}
         <div className="flex flex-col gap-1.5">
-          {EXAMPLE_GOALS.map((example) => (
+          {currentExamples.map((example) => (
             <button
               key={example}
               onClick={() => handleExampleClick(example)}
@@ -206,12 +238,10 @@ export const GoalInput = forwardRef<GoalInputHandle, GoalInputProps>(
           ))}
         </div>
 
-        {/* Error */}
         {error && (
           <MonoLabel variant="error" size="xs">{error}</MonoLabel>
         )}
 
-        {/* Submit */}
         <button
           onClick={handleSubmit}
           disabled={goal.trim().length === 0 || isSubmitting}

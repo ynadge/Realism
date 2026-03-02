@@ -42,6 +42,7 @@ Last updated: 2026-03-02
 - **016 — Live Data API:** `/api/live/data/[userId]/[slug]/route.ts` — the server-side data endpoint generated Live apps call on page load. URL path uses `[userId]/[slug]` (not just `[slug]`) for unambiguous plan resolution. `lib/live-data-executor.ts` handles parallel fetch execution (search, deep search, URL fetch, connectors) with `Promise.allSettled` for graceful partial failure. Synthesis via Claude for fetches with `synthesize: true`. Token refresh for Spotify credentials persisted back to Redis via `getRefreshedConnectorCredentials`. `connector-manager.ts` updated with optional `preloadedCredentials` parameter to avoid circular dependency. Redis caching respects plan's `cacheTTL`. CORS headers set for iframe access.
 - **017 — Live Page: Iframe Shell:** `app/live/[userId]/[slug]/page.tsx` (server component loads config + bundle from Redis), `components/LiveShell.tsx` (client component renders sandboxed iframe with `srcDoc={bundle}` — no manual escaping), `not-found.tsx` (styled 404), `loading.tsx` (pulse animation), `settings/page.tsx` (stub for Ticket 018). Middleware updated: `/live/*` routes are now publicly accessible (removed from `PROTECTED_PREFIXES` and `matcher`). `/dashboard` and `/job/*` remain auth-protected. First end-to-end visible Live app: Bitcoin Pulse Terminal-styled app renders real data in iframe, header hide/show works, settings stub accessible.
 - **018 — Settings Page + Regenerate:** Real settings page at `/live/[userId]/[slug]/settings` with server-side auth check (owner-only, redirects non-owners to app). `components/live/SettingsClient.tsx` shows app info, data sources, personal context editing, connector status (Spotify connect/connected), regenerate button, and delete with confirmation. Three new API routes: `GET+DELETE /api/live/[slug]` (config + app deletion), `PATCH /api/live/[slug]/context` (saves userContext + invalidates Redis cache), `POST /api/live/[slug]/regenerate` (synchronous — re-verifies data, regenerates HTML bundle via `generateLiveApp`, no Inngest). All routes have ownership verification. Context save proactively invalidates cache to prevent stale userContext in data responses.
+- **019 — Dashboard + Landing Page Integration:** Landing page mode toggle extended from 2 modes (Once/Recurring) to 3 (Once/Scheduled/Live). Live mode hides budget slider, swaps example goals to Live-specific examples, changes submit to POST `/api/live/create`. `components/live/LiveCreationProgress.tsx` shows timed progress steps (0s/15s/35s), polls `/api/live/status/[eventId]` every 3 seconds with proper `useEffect` cleanup (clears poll timeout + step timers on unmount/completion), redirects on completion. Dashboard gets "Live Apps" section above existing jobs — shows app cards with title, design personality badge, description, Open/Settings links. New API route `GET /api/live/apps` returns user's apps + userId for URL construction. Full end-to-end flow verified: landing page → Live mode → goal → creation progress → redirect → Live app with real data.
 
 ## Key decisions made
 
@@ -65,12 +66,12 @@ Last updated: 2026-03-02
 
 - **Five Upstash clients:** `lib/redis.ts`, `lib/upstash.ts`, `lib/live-apps.ts`, `lib/inngest-functions.ts`, and `app/api/live/status/[eventId]/route.ts` each create separate `@upstash/redis` instances. Should be consolidated into a shared singleton.
 - **Push notifications not implemented:** Architecture doc specifies Web Push + PWA (VAPID, service worker, web-push npm) but none of it is built yet. Push subscription Redis functions are ready in `lib/redis.ts`.
-- **Live apps: settings complete.** Full pipeline works end-to-end including settings, context editing, regeneration, and deletion. Remaining UI: dashboard + landing page integration (019).
+- **Live apps: fully integrated into dashboard and landing page.** Full pipeline works end-to-end from goal input through creation, rendering, settings, regeneration, and deletion.
 - **All three v1 connectors built (Reddit, RSS, Spotify).** OAuth flow complete. Token refresh persistence implemented in `lib/live-data-executor.ts`. State parameter signing deferred to pre-launch.
 
 ## What's next
 
-Next: Ticket 019 — Dashboard + landing page integration.
+Next: Ticket 020 — Demo polish (three Live demo goals end-to-end).
 
 ## Environment
 

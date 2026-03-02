@@ -1,9 +1,10 @@
 'use client'
 
 import { Suspense, useEffect, useState, useRef } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { AuthModal } from '@/components/AuthModal'
 import { GoalInput, type GoalInputHandle } from '@/components/GoalInput'
+import { LiveCreationProgress } from '@/components/live/LiveCreationProgress'
 
 function NavLink() {
   const [hasSession, setHasSession] = useState(false)
@@ -28,8 +29,8 @@ function NavLink() {
 
 function HomeContent() {
   const searchParams = useSearchParams()
-  const router = useRouter()
   const [authOpen, setAuthOpen] = useState(false)
+  const [creatingEventId, setCreatingEventId] = useState<string | null>(null)
   const goalInputRef = useRef<GoalInputHandle>(null)
 
   useEffect(() => {
@@ -48,23 +49,33 @@ function HomeContent() {
 
       <NavLink />
 
-      <div className="animate-fade-up-1 text-center">
-        <p className="font-mono text-muted-foreground text-xs tracking-[0.3em] uppercase mb-3">
-          — realism —
-        </p>
-        <h1 className="font-display text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-tight">
-          If you can think it,
-          <br />
-          <span className="text-accent-lime">you can make it real.</span>
-        </h1>
-      </div>
-
-      <div className="animate-fade-up-3 w-full max-w-xl">
-        <GoalInput
-          ref={goalInputRef}
-          onAuthRequired={() => setAuthOpen(true)}
+      {creatingEventId ? (
+        <LiveCreationProgress
+          eventId={creatingEventId}
+          onCancel={() => setCreatingEventId(null)}
         />
-      </div>
+      ) : (
+        <>
+          <div className="animate-fade-up-1 text-center">
+            <p className="font-mono text-muted-foreground text-xs tracking-[0.3em] uppercase mb-3">
+              — realism —
+            </p>
+            <h1 className="font-display text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-tight">
+              If you can think it,
+              <br />
+              <span className="text-accent-lime">you can make it real.</span>
+            </h1>
+          </div>
+
+          <div className="animate-fade-up-3 w-full max-w-xl">
+            <GoalInput
+              ref={goalInputRef}
+              onAuthRequired={() => setAuthOpen(true)}
+              onLiveCreationStart={(eventId) => setCreatingEventId(eventId)}
+            />
+          </div>
+        </>
+      )}
 
       <AuthModal
         open={authOpen}
